@@ -11,7 +11,8 @@ The example application demonstrates the following features.
 
 ## Usage
 
-Select `Example` scheme with preferred iOS simulator and simply run it.
+The example requires iOS 16.0 or later, or Mac Catalyst 16.0 or later.
+Select the `Example` scheme with a compatible destination and simply run it.
 
 ### Running example application on the device
 

@@ -110,6 +110,7 @@ final class ContentFilterScheduler<Input: Equatable, Output> {
     private struct Schedule {
         var input: Input
         var completion: Completion
+        let token: NSObject
     }
 
     private struct Cache {
@@ -133,8 +134,16 @@ final class ContentFilterScheduler<Input: Equatable, Output> {
        - `SchedulerError`
      */
     func schedule(_ input: Input, completion: @escaping Completion) {
+        // Give every request its identity as soon as it is accepted, before debounce
+        // and cache lookup. A cache hit still represents a newer request and must
+        // invalidate any older filter that remains in flight. Assigning the token only
+        // when a filter starts would let that older filter complete after a cache hit,
+        // overwrite the cache, and deliver a result that is no longer current.
+        let token = NSObject()
+        latestToken = token
+
         let previousSchedule = schedule
-        schedule = Schedule(input: input, completion: completion)
+        schedule = Schedule(input: input, completion: completion, token: token)
 
         // Debounce
         if let previousSchedule = previousSchedule {
@@ -157,26 +166,37 @@ final class ContentFilterScheduler<Input: Equatable, Output> {
                 return
             }
 
-            // Latest
-            let token = NSObject()
-            self.latestToken = token
-
             self.filter(schedule.input) { [weak self] result in
-                guard let self = self else {
-                    return
+                // Attribute filters are allowed to complete on any queue. Scheduler
+                // state and every UIKit consumer are main-thread confined, so token
+                // validation, cache mutation, and result delivery must move together.
+                // Keeping the latest-token check inside this closure also prevents an
+                // older background result from winning during the queue hop.
+                let deliverResult = { [weak self] in
+                    guard let self = self else {
+                        return
+                    }
+
+                    guard let latestToken = self.latestToken,
+                          latestToken === schedule.token
+                    else {
+                        log(type: .debug, "Not latest")
+                        schedule.completion(.failure(SchedulerError.notLatest))
+                        return
+                    }
+
+                    if case let .success(output) = result {
+                        self.cache = Cache(key: schedule.input, value: output)
+                    }
+
+                    schedule.completion(result)
                 }
 
-                guard let latestToken = self.latestToken, latestToken == token else {
-                    log(type: .debug, "Not latest")
-                    completion(.failure(SchedulerError.notLatest))
-                    return
+                if Thread.isMainThread {
+                    deliverResult()
+                } else {
+                    DispatchQueue.main.async(execute: deliverResult)
                 }
-
-                if case let .success(output) = result {
-                    self.cache = Cache(key: schedule.input, value: output)
-                }
-
-                schedule.completion(result)
             }
         }
     }

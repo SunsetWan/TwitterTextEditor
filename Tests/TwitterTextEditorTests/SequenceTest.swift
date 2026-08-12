@@ -8,82 +8,119 @@
 
 import Foundation
 @testable import TwitterTextEditor
-import XCTest
+import Testing
 
-final class SequenceTest: XCTestCase {
-    func testForEachWithContinue() {
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ value: Value) {
+        storage = value
+    }
+
+    func withValue<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&storage)
+    }
+
+    var value: Value {
+        withValue { $0 }
+    }
+}
+
+struct SequenceTest {
+    @Test
+    func `For each continues through the sequence`() async {
         let sequence = [1, 2, 3]
+        let queue = DispatchQueue(label: #function)
+        let results = Locked([Int]())
+        let completed = Locked(false)
 
-        let expectation = XCTestExpectation(description: "forEach")
-        var results = [Int]()
-
-        sequence.forEach(queue: DispatchQueue.global(), completion: {
-            expectation.fulfill()
+        sequence.forEach(queue: queue, completion: {
+            completed.withValue { $0 = true }
         }, { element, next in
-            results.append(element)
+            results.withValue { $0.append(element) }
             next(.continue)
         })
 
-        wait(for: [expectation], timeout: 3.0)
-
-        XCTAssertEqual(results, sequence)
+        #expect(await waitUntil { completed.value })
+        #expect(results.value == sequence)
     }
 
-    func testForEachWithBreak() {
+    @Test
+    func `For each breaks after the first element`() async {
         let sequence = [1, 2, 3]
+        let queue = DispatchQueue(label: #function)
+        let results = Locked([Int]())
+        let completed = Locked(false)
 
-        let expectation = XCTestExpectation(description: "forEach")
-        var results = [Int]()
-
-        sequence.forEach(queue: DispatchQueue.global(), completion: {
-            expectation.fulfill()
+        sequence.forEach(queue: queue, completion: {
+            completed.withValue { $0 = true }
         }, { element, next in
-            results.append(element)
+            results.withValue { $0.append(element) }
             next(.break)
         })
 
-        wait(for: [expectation], timeout: 3.0)
-
-        XCTAssertEqual(results, [1])
+        #expect(await waitUntil { completed.value })
+        #expect(results.value == [1])
     }
 
-    func testForEachWithoutCompletion() {
+    @Test
+    func `For each works without a completion closure`() async {
         let sequence = [1, 2, 3]
+        let queue = DispatchQueue(label: #function)
+        let results = Locked([Int]())
+        let completed = Locked(false)
 
-        let expectation = XCTestExpectation(description: "forEach")
-        var results = [Int]()
-
-        sequence.forEach(queue: DispatchQueue.global()) { element, next in
-            results.append(element)
-            if results.count < sequence.count {
+        sequence.forEach(queue: queue) { element, next in
+            let count = results.withValue { values in
+                values.append(element)
+                return values.count
+            }
+            if count < sequence.count {
                 next(.continue)
             } else {
-                expectation.fulfill()
+                completed.withValue { $0 = true }
             }
         }
 
-        wait(for: [expectation], timeout: 3.0)
-
-        XCTAssertEqual(results, sequence)
+        #expect(await waitUntil { completed.value })
+        #expect(results.value == sequence)
     }
 
-    func testForEachWithAsyncBody() {
+    @Test
+    func `For each supports an asynchronous body`() async {
         let sequence = [1, 2, 3]
+        let queue = DispatchQueue(label: #function)
+        let results = Locked([Int]())
+        let completed = Locked(false)
 
-        let expectation = XCTestExpectation(description: "forEach")
-        var results = [Int]()
-
-        sequence.forEach(queue: DispatchQueue.global(), completion: {
-            expectation.fulfill()
+        sequence.forEach(queue: queue, completion: {
+            completed.withValue { $0 = true }
         }, { element, next in
             DispatchQueue.global().async {
-                results.append(element)
+                results.withValue { $0.append(element) }
                 next(.continue)
             }
         })
 
-        wait(for: [expectation], timeout: 3.0)
-
-        XCTAssertEqual(results, sequence)
+        #expect(await waitUntil { completed.value })
+        #expect(results.value == sequence)
     }
+}
+
+private func waitUntil(
+    timeout: Duration = .seconds(3),
+    condition: @escaping @Sendable () -> Bool
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while clock.now < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return condition()
 }

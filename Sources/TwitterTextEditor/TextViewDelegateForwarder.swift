@@ -12,6 +12,14 @@ import UIKit
 final class TextViewDelegateForwarder: NSObject {
     weak var scrollViewDelegate: UIScrollViewDelegate?
     weak var textViewDelegate: UITextViewDelegate?
+
+    /// Internal observer kept separate from the public scroll-view delegate.
+    ///
+    /// `TextEditorView.scrollView.delegate` is a public customization point, so the
+    /// editor cannot take that delegate away merely to follow TextKit 2's viewport.
+    /// The forwarder lets the editor update presentation-only suffixes first and then
+    /// preserves the client's normal delegate callback.
+    var textViewportDidScroll: (() -> Void)?
 }
 
 /// :nodoc:
@@ -47,6 +55,7 @@ extension TextViewDelegateForwarder: UITextViewDelegate {
 /// :nodoc:
 extension TextViewDelegateForwarder: UIScrollViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        textViewportDidScroll?()
         scrollViewDelegate?.scrollViewDidScroll?(scrollView)
     }
     func scrollViewDidZoom(_ scrollView: UIScrollView) {

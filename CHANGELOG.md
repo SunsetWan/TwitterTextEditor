@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Migrate the editor's text layout implementation to TextKit 2.
+- Raise the minimum deployment target to iOS 16.0 and Mac Catalyst 16.0.
+- Migrate the unit test suite from XCTest to Swift Testing.
+
 ## 1.1.2
 
 - FIX: `TextViewDelegateForwarder` only forwards limited `UIScrollViewDelegate` methods (#19)

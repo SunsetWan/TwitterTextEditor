@@ -42,8 +42,21 @@ public final class Configuration {
     public var attributeNamesDescribedForAttributedStringShortDescription: Set<NSAttributedString.Key>?
 
     /**
-     Enable debugging for `drawGlyphs(forGlyphRange:at:)`.
+     Enable drawing the bounds of TextKit 2 suffix attachments for debugging.
      Default to `false`.
      */
-    public var isDebugLayoutManagerDrawGlyphsEnabled: Bool = false
+    public var isDebugTextLayoutEnabled: Bool = false
+
+    /**
+     Compatibility alias for `isDebugTextLayoutEnabled`.
+     */
+    @available(*, deprecated, renamed: "isDebugTextLayoutEnabled")
+    public var isDebugLayoutManagerDrawGlyphsEnabled: Bool {
+        get {
+            isDebugTextLayoutEnabled
+        }
+        set {
+            isDebugTextLayoutEnabled = newValue
+        }
+    }
 }

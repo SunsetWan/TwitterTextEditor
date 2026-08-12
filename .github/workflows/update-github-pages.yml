@@ -7,15 +7,15 @@ on:
 
 jobs:
   update-github-pages:
-    runs-on: macOS-12
+    runs-on: macos-15
 
     env:
       GITHUB_PAGES_PATH: .gh-pages
 
     steps:
-      - name: Use Xcode 14.2
+      - name: Use Xcode 16.4
         run: |
-          sudo xcode-select -s /Applications/Xcode_14.2.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Show versions
         run: |
@@ -24,10 +24,10 @@ jobs:
           swift --version
 
       - name: Checkout default branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: ${{ env.GITHUB_PAGES_PATH }}

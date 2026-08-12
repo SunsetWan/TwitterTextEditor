@@ -118,15 +118,9 @@ NS_ASSUME_NONNULL_BEGIN
     contentInset.bottom = bottomInset;
     self.textEditorView.scrollView.contentInset = contentInset;
 
-    if (@available(iOS 11.1, *)) {
-        UIEdgeInsets verticalScrollIndicatorInsets = self.textEditorView.scrollView.verticalScrollIndicatorInsets;
-        verticalScrollIndicatorInsets.bottom = bottomInset;
-        self.textEditorView.scrollView.verticalScrollIndicatorInsets = verticalScrollIndicatorInsets;
-    } else {
-        UIEdgeInsets scrollIndicatorInsets = self.textEditorView.scrollView.scrollIndicatorInsets;
-        scrollIndicatorInsets.bottom = bottomInset;
-        self.textEditorView.scrollView.scrollIndicatorInsets = scrollIndicatorInsets;
-    }
+    UIEdgeInsets verticalScrollIndicatorInsets = self.textEditorView.scrollView.verticalScrollIndicatorInsets;
+    verticalScrollIndicatorInsets.bottom = bottomInset;
+    self.textEditorView.scrollView.verticalScrollIndicatorInsets = verticalScrollIndicatorInsets;
 }
 
 // MARK: - TextEditorBridgeViewDelegate

@@ -53,12 +53,12 @@ final class TwitterTextEditorBridgeConfiguration: NSObject {
     }
 
     @objc
-    var isDebugLayoutManagerDrawGlyphsEnabled: Bool {
+    var isDebugTextLayoutEnabled: Bool {
         get {
-            configuration.isDebugLayoutManagerDrawGlyphsEnabled
+            configuration.isDebugTextLayoutEnabled
         }
         set {
-            configuration.isDebugLayoutManagerDrawGlyphsEnabled = newValue
+            configuration.isDebugTextLayoutEnabled = newValue
         }
     }
 }

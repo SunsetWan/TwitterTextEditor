@@ -8,9 +8,9 @@
 
 import Foundation
 import KeyboardGuide
-import MobileCoreServices
 import TwitterTextEditor
 import UIKit
+import UniformTypeIdentifiers
 
 protocol SwiftViewControllerDelegate: AnyObject {
     func swiftViewControllerDidTapDone(_ swiftViewController: SwiftViewController)
@@ -150,12 +150,12 @@ final class SwiftViewController: UIViewController {
 
         textEditorView.pasteObservers = [
             BlockPasteObserver(
-                acceptableTypeIdentifiers: [kUTTypeImage as String],
+                acceptableTypeIdentifiers: [UTType.image.identifier],
                 canPaste: { _ in
                     true
                 },
                 transform: { [weak self] itemProvider, reply in
-                    itemProvider.loadDataRepresentation(forTypeIdentifier: kUTTypeImage as String) { [weak self] data, _ in
+                    itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, _ in
                         if let data = data, let image = UIImage(data: data) {
                             // Called on an arbitrary background queue.
                             DispatchQueue.main.async {
@@ -227,11 +227,7 @@ final class SwiftViewController: UIViewController {
 
         let bottomInset = view.keyboardSafeArea.insets.bottom - view.layoutMargins.bottom
         textEditorView.scrollView.contentInset.bottom = bottomInset
-        if #available(iOS 11.1, *) {
-            textEditorView.scrollView.verticalScrollIndicatorInsets.bottom = bottomInset
-        } else {
-            textEditorView.scrollView.scrollIndicatorInsets.bottom = bottomInset
-        }
+        textEditorView.scrollView.verticalScrollIndicatorInsets.bottom = bottomInset
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -298,7 +294,7 @@ extension SwiftViewController: UIDropInteractionDelegate {
             return !textEditorView.isDraggingText(of: localDragSession)
         }
         return session.items.contains { item in
-            item.itemProvider.hasItemConformingToTypeIdentifier(kUTTypeImage as String)
+            item.itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier)
         }
     }
 
@@ -324,7 +320,7 @@ extension SwiftViewController: UIDropInteractionDelegate {
         }
 
         let itemProvider = item.itemProvider
-        itemProvider.loadDataRepresentation(forTypeIdentifier: kUTTypeImage as String) { [weak self] data, _ in
+        itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, _ in
             if let data = data, let image = UIImage(data: data) {
                 // Called on an arbitrary background queue.
                 DispatchQueue.main.async {

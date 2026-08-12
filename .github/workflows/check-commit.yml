@@ -6,12 +6,12 @@ on:
 
 jobs:
   check-commit:
-    runs-on: macOS-12
+    runs-on: macos-15
 
     steps:
-      - name: Use Xcode 14.2
+      - name: Use Xcode 16.4
         run: |
-          sudo xcode-select -s /Applications/Xcode_14.2.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Current platform versions
         run: |
@@ -21,7 +21,7 @@ jobs:
           swiftlint version
 
       - name: Checkout default branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Run lint
         run: |
@@ -29,7 +29,7 @@ jobs:
 
       - name: Run test
         run: |
-          make test
+          make test TEST_DESTINATION="platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5"
 
       - name: Run doc
         run: |

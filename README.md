@@ -12,8 +12,8 @@ TwitterTextEditor supports recent versions of iOS.
 
 ## Requirements
 
-Twitter Text Editor requires macOS Catalina 10.15 or later and Xcode 11.0 and later for the development.
-At this moment, Twitter Text Editor supports iOS 11.0 and later also macCatalyst 13.0 and later.
+Twitter Text Editor requires Xcode 16.4 or later for development and running its Swift Testing suite.
+It supports iOS 16.0 and later, and Mac Catalyst 16.0 and later.
 
 
 ## Usage
@@ -61,7 +61,7 @@ Pod::Spec.new do |spec|
   spec.authors = ""
   spec.summary = "TwitterTextEditor"
   spec.homepage = "https://github.com/twitter/TwitterTextEditor"
-  spec.platform = :ios, "11.0"
+  spec.platform = :ios, "16.0"
   spec.source = {
     :git => "https://github.com/twitter/TwitterTextEditor.git", :tag => "#{spec.version}"
   }
@@ -74,25 +74,6 @@ Then, update `Podfile` in your project.
 ```ruby
 pod 'TwitterTextEditor', :podspec => 'path/to/TwitterTextEditor.podspec'
 ```
-
-#### Carthage
-
-To use Twitter Text Editor with [Carthage](https://github.com/Carthage/Carthage), update `Cartfile` in your project.
-
-```
-github "twitter/TwitterTextEditor"
-```
-
-Then, run following commands. This will create `Carthage/Build/iOS/TwitterTextEditor.framework`.
-
-```
-$ carthage update
-$ (cd Carthage/Checkouts/TwitterTextEditor && swift package generate-xcodeproj)
-$ carthage build --platform iOS
-```
-
-Follow [the instructions](https://github.com/Carthage/Carthage#if-youre-building-for-ios-tvos-or-watchos)
-to add the framework and Run Script phase to your project.
 
 ### Documentation
 
