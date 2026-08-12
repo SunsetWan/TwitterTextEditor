@@ -840,6 +840,7 @@ public final class TextEditorView: UIView {
 
             do {
                 log(type: .debug, "Set text attributes: %@", updatedAttributedString.loggingDescription)
+                self.suffixPresentation.backingContentWillChange()
                 try self.textStorage.setAttributes(from: updatedAttributedString)
                 if let textLayoutManager = self.textView.textLayoutManager {
                     // Attribute updates invalidate TextKit 2 fragments. Ask the viewport
@@ -948,6 +949,7 @@ public final class TextEditorView: UIView {
             textView.textContainerInset
         }
         set {
+            suffixPresentation.layoutGeometryWillChange()
             textView.textContainerInset = newValue
 
             updatePlaceholderText()
@@ -963,6 +965,7 @@ public final class TextEditorView: UIView {
             textView.textContainer.lineBreakMode
         }
         set {
+            suffixPresentation.layoutGeometryWillChange()
             textView.textContainer.lineBreakMode = newValue
 
             updatePlaceholderTextView()
@@ -983,6 +986,7 @@ public final class TextEditorView: UIView {
             textView.textContainer.lineFragmentPadding
         }
         set {
+            suffixPresentation.layoutGeometryWillChange()
             textView.textContainer.lineFragmentPadding = newValue
 
             updatePlaceholderText()
@@ -1638,6 +1642,9 @@ extension TextEditorView: NSTextStorageDelegate {
                             range editedRange: NSRange,
                             changeInLength delta: Int)
     {
+        if editedMask.contains(.editedCharacters) {
+            suffixPresentation.backingContentWillChange()
+        }
         setNeedsLayout()
 
         log(type: .debug,

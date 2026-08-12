@@ -35,7 +35,7 @@ private final class TextAttributesDelegate: TextEditorViewTextAttributesDelegate
 }
 
 @MainActor
-@Suite
+@Suite(.serialized)
 struct TextEditorViewTextKit2Tests {
     @Test("Initializes with TextKit 2 layout manager")
     func initializesWithTextKit2() {
@@ -304,6 +304,49 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
+    @Test("Terminal left to right suffix occupies reserved trailing width")
+    func terminalLeftToRightSuffixReservesWidth() async throws {
+        let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 240, height: 100))
+        textEditorView.backgroundColor = .white
+        textEditorView.font = UIFont.systemFont(ofSize: 40)
+        textEditorView.textColor = .black
+        textEditorView.textContentInsets = .zero
+        textEditorView.textContentPadding = 0
+        textEditorView.text = "M"
+        textEditorView.layoutIfNeeded()
+
+        let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
+        let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        let suffixSize = CGSize(width: 20, height: 40)
+        let image = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
+        let textAttributesDelegate = TextAttributesDelegate { attributedString in
+            attributedString.addAttribute(
+                .suffixedAttachment,
+                value: TextAttributes.SuffixedAttachment(
+                    size: suffixSize,
+                    attachment: .image(image)
+                ),
+                range: NSRange(location: 0, length: 1)
+            )
+        }
+        textEditorView.textAttributesDelegate = textAttributesDelegate
+
+        textEditorView.setNeedsUpdateTextAttributes()
+
+        try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
+        textEditorView.layoutIfNeeded()
+        let updatedWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        #expect(abs(updatedWidth - baselineWidth - suffixSize.width) <= 1)
+        let renderedImageView = try #require(
+            textEditorView.textContentView.subviews
+                .compactMap { $0 as? UIImageView }
+                .first { $0.image === image }
+        )
+        renderedImageView.isHidden = true
+        let suffixFrame = renderedImageView.convert(renderedImageView.bounds, to: textEditorView)
+        #expect(try #require(darkPixelCount(in: suffixFrame, of: textEditorView)) == 0)
+    }
+
     @Test("Suffix in second paragraph uses document range and second line geometry")
     func secondParagraphUsesDocumentGeometry() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 240, height: 140))
@@ -372,14 +415,22 @@ struct TextEditorViewTextKit2Tests {
                                           range: NSRange(location: 1, length: 1))
         }
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 240, height: 120))
+        textEditorView.font = UIFont.systemFont(ofSize: 40)
+        textEditorView.textContentInsets = .zero
+        textEditorView.textContentPadding = 0
         textEditorView.text = "🐈"
         textEditorView.selectedRange = NSRange(location: 2, length: 0)
+        textEditorView.layoutIfNeeded()
+        let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
+        let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
         textEditorView.textAttributesDelegate = textAttributesDelegate
 
         textEditorView.setNeedsUpdateTextAttributes()
 
         try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
         textEditorView.layoutIfNeeded()
+        let updatedWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        #expect(abs(updatedWidth - baselineWidth - 40) <= 1)
         let renderedImageView = textEditorView.textContentView.subviews
             .compactMap { $0 as? UIImageView }
             .first { $0.image === image }
@@ -417,6 +468,50 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.text == "🐈")
         #expect(textEditorView.selectedRange == NSRange(location: 2, length: 0))
         #expect(textEditorView.textView.textLayoutManager != nil)
+    }
+
+    @Test("Suffix tracking preserves a complete combining cluster")
+    func suffixTrackingPreservesCombiningCluster() async throws {
+        let text = "e\u{301}M"
+        let textEditorView = TextEditorView(
+            frame: CGRect(x: 0, y: 0, width: 360, height: 100)
+        )
+        textEditorView.font = UIFont.systemFont(ofSize: 40)
+        textEditorView.textContentInsets = .zero
+        textEditorView.textContentPadding = 0
+        textEditorView.text = text
+        textEditorView.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        textEditorView.layoutIfNeeded()
+
+        let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
+        let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        let suffixSize = CGSize(width: 20, height: 18)
+        let image = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
+        let textAttributesDelegate = TextAttributesDelegate { attributedString in
+            attributedString.addAttribute(
+                .suffixedAttachment,
+                value: TextAttributes.SuffixedAttachment(
+                    size: suffixSize,
+                    attachment: .image(image)
+                ),
+                // Deliberately address only the combining mark. Presentation must expand
+                // this metadata to the complete shaping cluster before adding tracking.
+                range: NSRange(location: 1, length: 1)
+            )
+        }
+        textEditorView.textAttributesDelegate = textAttributesDelegate
+
+        textEditorView.setNeedsUpdateTextAttributes()
+
+        try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
+        textEditorView.layoutIfNeeded()
+        let updatedWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        #expect(abs(updatedWidth - baselineWidth - suffixSize.width) <= 1)
+        #expect(textEditorView.text == text)
+        #expect(
+            textEditorView.selectedRange
+                == NSRange(location: (text as NSString).length, length: 0)
+        )
     }
 
     @Test("Tall zero width suffix preserves right to left caret geometry")
@@ -671,6 +766,65 @@ struct TextEditorViewTextKit2Tests {
         #expect(try #require(darkPixelCount(in: suffixFrame, of: textEditorView)) == 0)
     }
 
+    @Test("Right to left suffix before a newline reserves terminal line width")
+    func rightToLeftSuffixBeforeNewlineReservesWidth() async throws {
+        let referenceView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 320, height: 140))
+        referenceView.backgroundColor = .white
+        referenceView.font = UIFont.systemFont(ofSize: 40)
+        referenceView.textColor = .black
+        referenceView.textContentInsets = .zero
+        referenceView.textContentPadding = 0
+        referenceView.text = "مم\n"
+        referenceView.layoutIfNeeded()
+        let referenceLayoutManager = try #require(referenceView.textView.textLayoutManager)
+        let baselineWidth = try #require(referenceLayoutManager.laidOutLines().first).frame.width
+
+        let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 320, height: 140))
+        textEditorView.backgroundColor = .white
+        textEditorView.font = UIFont.systemFont(ofSize: 40)
+        textEditorView.textColor = .black
+        textEditorView.textContentInsets = .zero
+        textEditorView.textContentPadding = 0
+        textEditorView.text = "مم\n"
+        textEditorView.layoutIfNeeded()
+
+        let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
+        let suffixSize = CGSize(width: 20, height: 40)
+        let image = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
+        let textAttributesDelegate = TextAttributesDelegate { attributedString in
+            attributedString.addAttribute(
+                .suffixedAttachment,
+                value: TextAttributes.SuffixedAttachment(
+                    size: suffixSize,
+                    attachment: .image(image)
+                ),
+                range: NSRange(location: 1, length: 1)
+            )
+        }
+        textEditorView.textAttributesDelegate = textAttributesDelegate
+
+        textEditorView.setNeedsUpdateTextAttributes()
+
+        try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
+        textEditorView.layoutIfNeeded()
+        let updatedWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        #expect(abs(updatedWidth - baselineWidth - suffixSize.width) <= 1)
+        let renderedImageView = try #require(
+            textEditorView.textContentView.subviews
+                .compactMap { $0 as? UIImageView }
+                .first { $0.image === image }
+        )
+        renderedImageView.isHidden = true
+        let suffixFrame = renderedImageView.convert(renderedImageView.bounds, to: textEditorView)
+        let overlapPixelCount = try #require(darkPixelCount(in: suffixFrame, of: textEditorView))
+        let baselineOverhangPixelCount = try #require(
+            darkPixelCount(in: suffixFrame, of: referenceView)
+        )
+        // Arabic glyphs can naturally overhang the visual-left edge. Compare with the
+        // same unsuffixed line so the oracle remains stable across font revisions.
+        #expect(overlapPixelCount <= baselineOverhangPixelCount)
+    }
+
     @Test("Right to left suffix that causes wrapping reserves width on its host line")
     func wrappingRightToLeftSuffixReservesHostLine() async throws {
         // This narrow reference wraps the same Arabic pair without any suffix. It gives
@@ -745,7 +899,7 @@ struct TextEditorViewTextKit2Tests {
         #expect(overlapPixelCount <= baselineOverhangPixelCount)
 
         // Expanding the container rejoins the shaping pair. The two-stage decision must
-        // therefore move the kern back to the next logical carrier instead of leaving a
+        // therefore move the tracking back to the next logical carrier instead of leaving a
         // stale host-line correction from the narrow layout.
         textEditorView.frame.size.width = 120
         textEditorView.setNeedsLayout()
@@ -776,7 +930,7 @@ struct TextEditorViewTextKit2Tests {
 
         // Compare the resized result with an editor that started at the expanded width.
         // Equality here proves the cached host-carrier correction was removed; merely
-        // checking total line width cannot distinguish the two kern locations.
+        // checking total line width cannot distinguish the two tracking locations.
         let initiallyExpandedView = TextEditorView(
             frame: CGRect(x: 0, y: 0, width: 120, height: 180)
         )

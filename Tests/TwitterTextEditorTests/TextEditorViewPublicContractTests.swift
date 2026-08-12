@@ -53,7 +53,7 @@ private final class PublicTestState<Value>: @unchecked Sendable {
 }
 
 @MainActor
-@Suite
+@Suite(.serialized)
 struct TextEditorViewPublicContractTests {
     @Test("Replacing emoji uses UTF16 offsets and moves selection")
     func replacingEmojiMovesSelection() throws {
