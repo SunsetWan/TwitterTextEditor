@@ -557,17 +557,25 @@ struct TextEditorViewTextKit2Tests {
 
     @Test("Nonzero suffix width is reserved inside right to left shaping")
     func rightToLeftSuffixReservesShapingWidth() async throws {
+        let text = "سلام"
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
         textEditorView.textColor = .black
         textEditorView.textContentInsets = .zero
         textEditorView.textContentPadding = 0
-        textEditorView.text = "سلام"
+        textEditorView.text = text
+        textEditorView.selectedRange = NSRange(
+            location: (text as NSString).length,
+            length: 0
+        )
         textEditorView.layoutIfNeeded()
 
         let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
         let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        let baselineGlyphPixelCount = try #require(
+            darkPixelCount(in: textEditorView.bounds, of: textEditorView)
+        )
         let suffixSize = CGSize(width: 20, height: 40)
         let image = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
         let textAttributesDelegate = TextAttributesDelegate { attributedString in
@@ -578,6 +586,9 @@ struct TextEditorViewTextKit2Tests {
             attributedString.addAttribute(
                 .suffixedAttachment,
                 value: attachment,
+                // The lam-alef shaping cluster spans more than this one UTF-16 unit.
+                // Presentation may reserve space for the complete cluster, but it must
+                // keep the original Arabic glyphs and public string intact.
                 range: NSRange(location: 2, length: 1)
             )
         }
@@ -600,30 +611,44 @@ struct TextEditorViewTextKit2Tests {
             to: textEditorView
         )
         #expect(try #require(darkPixelCount(in: suffixFrameInEditor, of: textEditorView)) == 0)
-        let endPosition = try #require(textEditorView.textView.position(
-            from: textEditorView.textView.beginningOfDocument,
-            offset: 3
-        ))
-        let endCaret = textEditorView.textView.caretRect(for: endPosition)
-        #expect(abs(renderedImageView.frame.midX - endCaret.midX) <= 1)
-        #expect(textEditorView.text == "سلام")
-        #expect(textEditorView.selectedRange == NSRange(location: 4, length: 0))
+        let updatedGlyphPixelCount = try #require(
+            darkPixelCount(in: textEditorView.bounds, of: textEditorView)
+        )
+        // Presentation spacing must preserve the host's shaped glyphs. Compare ink
+        // coverage with a small rasterization tolerance; a missing, substituted, or
+        // disconnected Arabic glyph changes far more than this three-percent allowance.
+        let glyphPixelTolerance = max(6, baselineGlyphPixelCount / 30)
+        #expect(abs(updatedGlyphPixelCount - baselineGlyphPixelCount) <= glyphPixelTolerance)
+        let updatedLine = try #require(textLayoutManager.laidOutLines().first)
+        #expect(suffixFrameInEditor.minX >= updatedLine.frame.minX - 1)
+        #expect(suffixFrameInEditor.maxX <= updatedLine.frame.maxX + 1)
+        #expect(textEditorView.text == text)
+        #expect(textEditorView.textView.text == text)
+        #expect(
+            textEditorView.selectedRange
+                == NSRange(location: (text as NSString).length, length: 0)
+        )
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
     @Test("Distinct suffixes inside one Arabic shaping cluster reserve independent gaps")
     func arabicClusterReservesIndependentGaps() async throws {
+        let text = "سلام"
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 360, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
         textEditorView.textColor = .black
         textEditorView.textContentInsets = .zero
         textEditorView.textContentPadding = 0
-        textEditorView.text = "سلام"
+        textEditorView.text = text
+        textEditorView.selectedRange = NSRange(location: 2, length: 0)
         textEditorView.layoutIfNeeded()
 
         let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
         let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        let baselineGlyphPixelCount = try #require(
+            darkPixelCount(in: textEditorView.bounds, of: textEditorView)
+        )
         let suffixSize = CGSize(width: 20, height: 40)
         let firstImage = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
         let secondImage = UIGraphicsImageRenderer(size: suffixSize).image { _ in }
@@ -670,6 +695,136 @@ struct TextEditorViewTextKit2Tests {
         #expect(!firstFrame.intersects(secondFrame))
         #expect(try #require(darkPixelCount(in: firstFrame, of: textEditorView)) == 0)
         #expect(try #require(darkPixelCount(in: secondFrame, of: textEditorView)) == 0)
+        let updatedGlyphPixelCount = try #require(
+            darkPixelCount(in: textEditorView.bounds, of: textEditorView)
+        )
+        let glyphPixelTolerance = max(6, baselineGlyphPixelCount / 30)
+        #expect(abs(updatedGlyphPixelCount - baselineGlyphPixelCount) <= glyphPixelTolerance)
+        #expect(textEditorView.text == text)
+        #expect(textEditorView.textView.text == text)
+        #expect(textEditorView.selectedRange == NSRange(location: 2, length: 0))
+    }
+
+    @Test("RTL presentation spacing stays out of public text selection and copy")
+    func rightToLeftPresentationSpacingStaysPrivate() async throws {
+        let text = "سلام"
+        let textLength = (text as NSString).length
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { _ in }
+        let textAttributesDelegate = TextAttributesDelegate { attributedString in
+            attributedString.addAttribute(
+                .suffixedAttachment,
+                value: TextAttributes.SuffixedAttachment(
+                    size: CGSize(width: 20, height: 20),
+                    attachment: .image(image)
+                ),
+                range: NSRange(location: 2, length: 1)
+            )
+        }
+        let textEditorView = TextEditorView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 100)
+        )
+        textEditorView.text = text
+        textEditorView.selectedRange = NSRange(location: textLength, length: 0)
+        textEditorView.textAttributesDelegate = textAttributesDelegate
+
+        textEditorView.setNeedsUpdateTextAttributes()
+
+        try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
+        textEditorView.layoutIfNeeded()
+
+        // Presentation-only layout attributes must never leak through a public
+        // UITextInput surface or change the backing UTF-16 coordinate space.
+        #expect(textEditorView.text == text)
+        #expect(textEditorView.textView.text == text)
+        #expect(textEditorView.textView.attributedText.string == text)
+        #expect(textEditorView.selectedRange == NSRange(location: textLength, length: 0))
+
+        let documentStart = textEditorView.textView.beginningOfDocument
+        let documentEnd = try #require(textEditorView.textView.position(
+            from: documentStart,
+            offset: textLength
+        ))
+        let documentRange = try #require(textEditorView.textView.textRange(
+            from: documentStart,
+            to: documentEnd
+        ))
+        #expect(textEditorView.textView.text(in: documentRange) == text)
+        #expect(textEditorView.textView.position(
+            from: documentStart,
+            offset: textLength + 1
+        ) == nil)
+
+        textEditorView.selectedRange = NSRange(location: 0, length: textLength)
+        let selectedStart = try #require(textEditorView.textView.position(
+            from: documentStart,
+            offset: textEditorView.selectedRange.location
+        ))
+        let selectedEnd = try #require(textEditorView.textView.position(
+            from: selectedStart,
+            offset: textEditorView.selectedRange.length
+        ))
+        let selectedTextRange = try #require(textEditorView.textView.textRange(
+            from: selectedStart,
+            to: selectedEnd
+        ))
+        // UIKit's copy command reads the selected UITextInput range. Assert that source
+        // directly instead of mutating the process-wide pasteboard, which is both global
+        // state and asynchronous on recent simulator runtimes.
+        let copiedText = try #require(textEditorView.textView.text(in: selectedTextRange))
+        #expect(copiedText == text)
+        #expect(!copiedText.contains("\u{FFFC}"))
+        #expect(textEditorView.selectedRange == NSRange(location: 0, length: textLength))
+    }
+
+    @Test("Right to left view suffix receives its reserved frame")
+    func rightToLeftViewSuffixReceivesReservedFrame() async throws {
+        let text = "سلام"
+        let suffixSize = CGSize(width: 24, height: 18)
+        let suffixView = UIView()
+        var laidOutFrames: [CGRect] = []
+        let textEditorView = TextEditorView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 100)
+        )
+        textEditorView.backgroundColor = .white
+        textEditorView.font = UIFont.systemFont(ofSize: 40)
+        textEditorView.textColor = .black
+        textEditorView.textContentInsets = .zero
+        textEditorView.textContentPadding = 0
+        textEditorView.text = text
+        textEditorView.selectedRange = NSRange(location: 2, length: 0)
+        textEditorView.layoutIfNeeded()
+
+        let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
+        let baselineWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+        textEditorView.textContentView.addSubview(suffixView)
+        let textAttributesDelegate = TextAttributesDelegate { attributedString in
+            attributedString.addAttribute(
+                .suffixedAttachment,
+                value: TextAttributes.SuffixedAttachment(
+                    size: suffixSize,
+                    attachment: .view(view: suffixView) { view, frame in
+                        view.frame = frame
+                        laidOutFrames.append(frame)
+                    }
+                ),
+                range: NSRange(location: 2, length: 1)
+            )
+        }
+        textEditorView.textAttributesDelegate = textAttributesDelegate
+
+        textEditorView.setNeedsUpdateTextAttributes()
+
+        try #require(await waitUntil { textAttributesDelegate.updateCount == 1 })
+        textEditorView.layoutIfNeeded()
+        let suffixFrame = try #require(laidOutFrames.last)
+        let updatedWidth = try #require(textLayoutManager.laidOutLines().first).frame.width
+
+        #expect(suffixFrame.size == suffixSize)
+        #expect(suffixView.frame == suffixFrame)
+        #expect(abs(updatedWidth - baselineWidth - suffixSize.width) <= 1)
+        #expect(try #require(darkPixelCount(in: suffixFrame, of: textEditorView)) == 0)
+        #expect(textEditorView.text == text)
+        #expect(textEditorView.selectedRange == NSRange(location: 2, length: 0))
     }
 
     @Test("Terminal right to left suffix occupies the visual trailing gap")
@@ -847,6 +1002,7 @@ struct TextEditorViewTextKit2Tests {
         textEditorView.textContentInsets = .zero
         textEditorView.textContentPadding = 0
         textEditorView.text = "مم"
+        textEditorView.selectedRange = NSRange(location: 2, length: 0)
         textEditorView.layoutIfNeeded()
         let textLayoutManager = try #require(textEditorView.textView.textLayoutManager)
         try #require(textLayoutManager.laidOutLines().count == 1)
@@ -886,6 +1042,8 @@ struct TextEditorViewTextKit2Tests {
         )
         renderedImageView.isHidden = true
         let suffixFrame = renderedImageView.convert(renderedImageView.bounds, to: textEditorView)
+        let initiallyWrappedLineFrames = updatedLines.map(\.frame)
+        let initiallyWrappedSuffixFrame = suffixFrame
         #expect(abs(suffixFrame.minY - updatedLines[0].frame.minY) <= 1)
         #expect(abs(suffixFrame.minX) <= 1)
         let overlapPixelCount = try #require(darkPixelCount(in: suffixFrame, of: textEditorView))
@@ -898,9 +1056,8 @@ struct TextEditorViewTextKit2Tests {
         // suffix.
         #expect(overlapPixelCount <= baselineOverhangPixelCount)
 
-        // Expanding the container rejoins the shaping pair. The two-stage decision must
-        // therefore move the tracking back to the next logical carrier instead of leaving a
-        // stale host-line correction from the narrow layout.
+        // Expanding the container rejoins the shaping pair. Presentation must therefore
+        // remove the narrow layout's stale host-line correction.
         textEditorView.frame.size.width = 120
         textEditorView.setNeedsLayout()
         textEditorView.layoutIfNeeded()
@@ -930,7 +1087,7 @@ struct TextEditorViewTextKit2Tests {
 
         // Compare the resized result with an editor that started at the expanded width.
         // Equality here proves the cached host-carrier correction was removed; merely
-        // checking total line width cannot distinguish the two tracking locations.
+        // checking total line width cannot distinguish the two presentation locations.
         let initiallyExpandedView = TextEditorView(
             frame: CGRect(x: 0, y: 0, width: 120, height: 180)
         )
@@ -981,7 +1138,32 @@ struct TextEditorViewTextKit2Tests {
             of: initiallyExpandedView
         )
         #expect(expandedOverlapPixelCount == initiallyExpandedOverlapPixelCount)
+
+        // Shrinking again exercises the reverse transition as well. The same editor must
+        // reproduce its original wrapped line and suffix geometry instead of retaining
+        // presentation state from the expanded container.
+        textEditorView.frame.size.width = 55
+        textEditorView.setNeedsLayout()
+        textEditorView.layoutIfNeeded()
+        let rewrappedLines = textLayoutManager.laidOutLines()
+        try #require(rewrappedLines.count == initiallyWrappedLineFrames.count)
+        for (rewrappedLine, initialFrame) in zip(
+            rewrappedLines,
+            initiallyWrappedLineFrames
+        ) {
+            #expect(abs(rewrappedLine.frame.minX - initialFrame.minX) <= 1)
+            #expect(abs(rewrappedLine.frame.minY - initialFrame.minY) <= 1)
+            #expect(abs(rewrappedLine.frame.width - initialFrame.width) <= 1)
+            #expect(abs(rewrappedLine.frame.height - initialFrame.height) <= 1)
+        }
+        let rewrappedSuffixFrame = renderedImageView.convert(
+            renderedImageView.bounds,
+            to: textEditorView
+        )
+        #expect(abs(rewrappedSuffixFrame.minX - initiallyWrappedSuffixFrame.minX) <= 1)
+        #expect(abs(rewrappedSuffixFrame.minY - initiallyWrappedSuffixFrame.minY) <= 1)
         #expect(textEditorView.text == "مم")
+        #expect(textEditorView.selectedRange == NSRange(location: 2, length: 0))
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 

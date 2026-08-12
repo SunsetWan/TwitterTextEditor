@@ -18,7 +18,7 @@ import UIKit
  `NSTextContentStorage` an equal-length presentation paragraph:
 
  - the custom suffix attribute is removed before TextKit lays out the paragraph;
- - standard character tracking at the host's shaping-cluster boundary reserves the suffix width;
+ - standard tracking for LTR and kerning for RTL reserve width at a shaping-cluster boundary;
  - the image or view is overlaid after TextKit has produced caret geometry.
 
  The presentation string preserves the backing string's UTF-16 code units, so the
@@ -81,13 +81,15 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     private var wrappedRightToLeftHostLocations = Set<Int>()
     /// Guards the one temporary host-carrier probe used to resolve RTL soft wrapping.
     ///
-    /// Tracking on the normal next-logical carrier is trailing whitespace. On older
-    /// TextKit 2 releases that whitespace is excluded from the reported line width, so a
-    /// first pass cannot reveal whether moving the same space to the host would wrap. A
-    /// host probe lets TextKit answer that question with its real container geometry;
+    /// RTL kerning normally lives on the next logical cluster so the gap appears after the
+    /// host in visual order. A soft wrap can move that carrier onto the following line, and
+    /// moving the same kern back to the host can itself change the break. A host probe lets
+    /// TextKit resolve that circular decision with its real container geometry;
     /// `updateWrappedRightToLeftCarriers` then either keeps the host or restores the normal
     /// carrier and regenerates the paragraph once more.
     private var rightToLeftCarrierProbeLocations = Set<Int>()
+    /// Locations waiting for their host line fragment to enter the laid-out viewport.
+    private var pendingRightToLeftCarrierProbeLocations = Set<Int>()
     /// Locations whose current container width has already resolved the probe.
     private var resolvedRightToLeftCarrierLocations = Set<Int>()
     private var lastResolvedContainerWidth: CGFloat?
@@ -101,6 +103,7 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     func backingContentWillChange() {
         wrappedRightToLeftHostLocations.removeAll()
         rightToLeftCarrierProbeLocations.removeAll()
+        pendingRightToLeftCarrierProbeLocations.removeAll()
         resolvedRightToLeftCarrierLocations.removeAll()
     }
 
@@ -156,12 +159,11 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             // Indic text, for example, may map several characters to one glyph cluster;
             // assigning spacing to an interior character is then ignored or breaks shaping.
             // Core Text exposes the string-index clusters produced from the same
-            // attributed paragraph. Reserve the width at that cluster's first logical
-            // code unit, which keeps the cluster intact for TextKit 2.
-            // Core Text applies `tracking` between grapheme-cluster boundaries and treats
-            // it as trailing whitespace. That space is visually after this cluster for
-            // LTR runs. For RTL runs the visually trailing boundary belongs to the next
-            // logical cluster, so use that carrier when one exists. At paragraph end,
+            // attributed paragraph. Apply the presentation spacing uniformly across the
+            // selected complete cluster so TextKit 2 never sees an interior attribute split.
+            // LTR tracking places the added advance visually after its host. For RTL runs,
+            // TextKit represents that visually trailing boundary on the next logical
+            // cluster, so use it as the kern carrier when one exists. At paragraph end,
             // the current cluster remains the only available carrier.
             let nextLogicalCluster = shapingClusters.first { candidate in
                 candidate.range.location == group.cluster.range.upperBound
@@ -182,9 +184,9 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             // Apple documents that nonzero tracking disables nonessential ligatures
             // unless a ligature attribute is present. UIKit's normal default is enabled
             // even though the attributed string commonly omits the key. Materialize that
-            // default across the complete shaping cluster: applying either attribute to a
-            // single UTF-16 code unit could split a surrogate pair, ZWJ sequence, or
-            // ligature. Explicit client values such as zero remain untouched.
+            // default before adding tracking or kerning. Keep the presentation attribute
+            // on the complete Core Text cluster so it cannot split a surrogate pair,
+            // combining sequence, or ligature. Explicit client values remain untouched.
             var rangesMissingLigature = [NSRange]()
             paragraph.enumerateAttribute(.ligature, in: spacingRange) { value, range, _ in
                 if value == nil {
@@ -199,16 +201,29 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
                 )
             }
 
-            let existingTracking = (paragraph.attribute(
-                .tracking,
-                at: spacingLocation,
-                effectiveRange: nil
-            ) as? NSNumber)?.doubleValue ?? 0
-            paragraph.addAttribute(
-                .tracking,
-                value: NSNumber(value: existingTracking + group.width),
-                range: spacingRange
-            )
+            if group.cluster.isRightToLeft {
+                let existingKern = (paragraph.attribute(
+                    .kern,
+                    at: spacingLocation,
+                    effectiveRange: nil
+                ) as? NSNumber)?.doubleValue ?? 0
+                paragraph.addAttribute(
+                    .kern,
+                    value: NSNumber(value: existingKern + group.width),
+                    range: spacingRange
+                )
+            } else {
+                let existingTracking = (paragraph.attribute(
+                    .tracking,
+                    at: spacingLocation,
+                    effectiveRange: nil
+                ) as? NSNumber)?.doubleValue ?? 0
+                paragraph.addAttribute(
+                    .tracking,
+                    value: NSNumber(value: existingTracking + group.width),
+                    range: spacingRange
+                )
+            }
         }
 
         // TextKit requires a custom presentation paragraph to have exactly the same
@@ -265,6 +280,10 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
                   group.width != 0,
                   !wrappedRightToLeftHostLocations.contains(group.cluster.range.location),
                   !resolvedRightToLeftCarrierLocations.contains(group.cluster.range.location),
+                  !pendingRightToLeftCarrierProbeLocations.contains(group.cluster.range.location),
+                  laidOutLines.contains(where: { line in
+                      line.characterRange.contains(group.cluster.range.location)
+                  }),
                   Self.nextLogicalCluster(after: group.cluster, in: backingStore) != nil
             else {
                 return nil
@@ -272,6 +291,7 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             return group.cluster.range.location
         })
         if !probeLocations.isEmpty {
+            pendingRightToLeftCarrierProbeLocations.formUnion(probeLocations)
             rightToLeftCarrierProbeLocations.formUnion(probeLocations)
             invalidatePresentationParagraphs(
                 containing: probeLocations,
@@ -296,7 +316,6 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             textLayoutManager.textViewportLayoutController.layoutViewport()
             laidOutLines = Self.laidOutLines(in: textLayoutManager)
         }
-        rightToLeftCarrierProbeLocations.subtract(probeLocations)
         for group in suffixGroups {
             guard let groupFrame = suffixGroupFrame(
                 for: group,
@@ -492,7 +511,7 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     /// Groups public suffixes by the shaping cluster that TextKit lays out atomically.
     ///
     /// Several graphemes can collapse into one Arabic or Indic cluster. Reserving width
-    /// once per suffix at the same kern location produces an ambiguous gap and overlapping
+    /// once per suffix at the same spacing carrier produces an ambiguous gap and overlapping
     /// overlays. Aggregating first gives the cluster one deterministic gap whose children
     /// can then be tiled in logical UTF-16 order.
     private static func suffixGroups(
@@ -607,10 +626,10 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     /// Changing the carrier decision alone cannot invalidate a presentation paragraph
     /// that TextKit has already generated, and predicting breaks with another typesetter
     /// cannot exactly reproduce NSTextContainer geometry. Instead, inspect TextKit's real
-    /// first pass, update the presentation decision, then report a zero-length attribute
-    /// edit for each affected paragraph. `NSTextContentStorage` observes that edit and
-    /// requests a new equal-length paragraph; the backing storage itself retains the same
-    /// UTF-16 code units and attributes.
+    /// first pass, update the presentation decision, then replace each suffix attribute
+    /// with its current value in the affected paragraph. `NSTextContentStorage` observes
+    /// that real, automatically reported edit and requests a new equal-length paragraph;
+    /// the backing storage retains the same final UTF-16 code units and attributes.
     private func updateWrappedRightToLeftCarriers(
         for groups: [SuffixGroup],
         in laidOutLines: [LaidOutLine],
@@ -645,11 +664,11 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
         }
 
         // A viewport range can include a suffix whose line fragment has not materialized
-        // yet. Clear its transient probe without sending another invalidation pulse; the
-        // unresolved location will be probed again after it actually enters the viewport.
-        // Only evaluated locations receive the final regeneration, which prevents a
-        // layout/edit loop at viewport boundaries.
-        rightToLeftCarrierProbeLocations.removeAll()
+        // yet. Only evaluated locations receive the final regeneration. Other pending
+        // locations keep their probe state until the viewport produces a host line, which
+        // avoids repeatedly invalidating the same boundary paragraph.
+        rightToLeftCarrierProbeLocations.subtract(evaluatedLocations)
+        pendingRightToLeftCarrierProbeLocations.subtract(evaluatedLocations)
         guard !evaluatedLocations.isEmpty else {
             return false
         }
@@ -666,9 +685,9 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     /// Invalidates only the presentation paragraphs that contain the given locations.
     ///
     /// `NSTextContentStorageDelegate` output is cached separately from the backing
-    /// `NSTextStorage`. Reporting an attribute edit is an observation pulse that asks the
-    /// content storage to rebuild equal-length paragraphs; it does not mutate public text
-    /// or attributes.
+    /// `NSTextStorage`. Replacing a suffix attribute with its current value is a real,
+    /// automatically reported attribute edit whose final public value is unchanged. The
+    /// content storage then rebuilds the equal-length presentation paragraph.
     private func invalidatePresentationParagraphs(
         containing locations: Set<Int>,
         backingStore: NSTextStorage,
@@ -684,14 +703,26 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
 
         backingStore.beginEditing()
         for paragraphRange in paragraphRanges {
-            // `edited` is an observation pulse, not a mutation: the delegate's decision
-            // changed even though the attributed backing store did not. Text storage
-            // observers receive the minimum paragraph range that must be regenerated.
-            backingStore.edited(
-                .editedAttributes,
-                range: paragraphRange,
-                changeInLength: 0
-            )
+            var suffixRuns = [(value: Any, range: NSRange)]()
+            backingStore.enumerateAttribute(
+                .suffixedAttachment,
+                in: paragraphRange
+            ) { value, range, _ in
+                if let value {
+                    suffixRuns.append((value, range))
+                }
+            }
+            for suffixRun in suffixRuns {
+                // NSMutableAttributedString automatically reports this actual mutation to
+                // NSTextContentStorage; calling NSTextStorage.edited directly here would
+                // violate that method's subclass-only reporting contract.
+                backingStore.removeAttribute(.suffixedAttachment, range: suffixRun.range)
+                backingStore.addAttribute(
+                    .suffixedAttachment,
+                    value: suffixRun.value,
+                    range: suffixRun.range
+                )
+            }
         }
         backingStore.endEditing()
 
@@ -745,8 +776,9 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
     /// Returns whether a shaping cluster contains only a paragraph terminator.
     ///
     /// Core Text can expose the newline as a zero-glyph logical cluster. Tracking it is
-    /// treated as trailing line whitespace and therefore reserves no inline box for a
-    /// suffix immediately before the newline; such a host is terminal for our purposes.
+    /// trailing whitespace, while kerning it has no printable pair; neither reserves a
+    /// stable inline box for a suffix immediately before the newline. Such a host is
+    /// terminal for our purposes.
     private static func isParagraphTerminator(at range: NSRange, in string: String) -> Bool {
         let terminators = CharacterSet.newlines
         let substring = (string as NSString).substring(with: range)
@@ -773,13 +805,13 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
         return NSTextRange(location: start, end: end)
     }
 
-    /// Returns the actual tracking gap for a cluster in TextKit's visual line.
+    /// Returns the actual presentation-spacing gap for a cluster in TextKit's visual line.
     ///
     /// `UITextInput.caretRect` is unsuitable after a suffix itself causes wrapping: the
     /// logical end position can move to the next line even though the host cluster stays
     /// on the previous one. `NSTextLineFragment.characterRange` identifies the true host
     /// line; its typographic edge supplies the gap at a line end, while the caret remains
-    /// useful as the centre of an interior tracked pair.
+    /// useful as the centre of an interior spaced pair.
     private func suffixGroupFrame(
         for group: SuffixGroup,
         in laidOutLines: [LaidOutLine],
@@ -819,16 +851,16 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             // following logical cluster was separated by this soft wrap.
             if group.cluster.isRightToLeft {
                 if wrappedRightToLeftHostLocations.contains(group.cluster.range.location) {
-                    // Moving tracking to a wrapped RTL host expands its right-aligned
+                    // Moving kerning to a wrapped RTL host expands its right-aligned
                     // typographic frame toward the visual left without moving minX by the
                     // full suffix width. Place the overlay immediately before that edge,
                     // clamped to the text container, which reproduces the legacy control
                     // glyph's visual-left placement (including normal glyph overhang).
                     x = max(0, lineFrame.minX - group.width)
                 } else {
-                    // A terminal RTL cluster has no following logical carrier. Kerning
-                    // its own first code unit opens a gap around that character's upstream
-                    // edge. `locationForCharacter` exposes that kerning boundary in line
+                    // A terminal RTL cluster has no following logical carrier. Kerning its
+                    // complete shaping range opens a gap around that cluster's upstream
+                    // edge. `locationForCharacter` exposes that kern boundary in line
                     // coordinates; centring the overlay there uses the width TextKit
                     // actually reserved instead of assuming typographicBounds starts at a
                     // glyph edge (Arabic glyphs routinely overhang that edge).
@@ -854,7 +886,7 @@ final class TextKit2SuffixPresentation: NSObject, NSTextContentStorageDelegate {
             x = boundary - group.width / 2
         } else {
             // For an interior pair, locationForCharacter and caretRect expose the centre
-            // of the tracked pair, not either edge of the inserted space. Centre the whole
+            // of the spaced pair, not either edge of the inserted space. Centre the whole
             // aggregated group on that boundary, then tile its children without asking
             // TextKit for impossible caret positions inside one shaping cluster.
             guard let position = textView.position(

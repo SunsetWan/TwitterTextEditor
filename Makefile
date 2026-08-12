@@ -57,11 +57,13 @@ build:
 
 .PHONY: test
 test:
+	# UIKit contract suites share simulator-global UI state and are intentionally serialized.
 	$(XCODEBUILD) \
 		-scheme "$(BUILD_SCHEME)" \
 		-destination "$(TEST_DESTINATION)" \
 		-configuration "$(BUILD_CONFIGURATION)" \
 		-derivedDataPath "$(BUILD_DERIVED_DATA_PATH)" \
+		-parallel-testing-enabled NO \
 		test
 
 .PHONY: docbuild
