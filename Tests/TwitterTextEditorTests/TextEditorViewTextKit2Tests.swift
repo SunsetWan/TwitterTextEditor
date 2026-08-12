@@ -37,15 +37,15 @@ private final class TextAttributesDelegate: TextEditorViewTextAttributesDelegate
 @MainActor
 @Suite
 struct TextEditorViewTextKit2Tests {
-    @Test
-    func `Initializes with TextKit 2 layout manager`() {
+    @Test("Initializes with TextKit 2 layout manager")
+    func initializesWithTextKit2() {
         let textEditorView = TextEditorView(frame: .zero)
 
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Updating text attributes keeps TextKit 2 layout manager`() async throws {
+    @Test("Updating text attributes keeps TextKit 2 layout manager")
+    func updatesKeepTextKit2() async throws {
         let textAttributesDelegate = TextAttributesDelegate()
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.text = "Meow"
@@ -57,8 +57,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed image preserves text selection and TextKit 2 layout manager`() async throws {
+    @Test("Suffixed image preserves text selection and TextKit 2 layout manager")
+    func suffixedImagePreservesSelection() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { context in
             UIColor.systemRed.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: 12, height: 12)))
@@ -83,8 +83,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed image is rendered and removed with its attribute`() async throws {
+    @Test("Suffixed image is rendered and removed with its attribute")
+    func suffixedImageLifecycle() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 14)).image { context in
             UIColor.systemRed.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: 16, height: 14)))
@@ -133,8 +133,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Tall suffixed image preserves host line metrics`() async throws {
+    @Test("Tall suffixed image preserves host line metrics")
+    func tallSuffixPreservesLineMetrics() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 80)).image { context in
             UIColor.systemRed.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: 40, height: 80)))
@@ -168,8 +168,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(renderedImageView?.frame.size == CGSize(width: 40, height: 80))
     }
 
-    @Test
-    func `Tall zero width suffix preserves wrapped line geometry`() async throws {
+    @Test("Tall zero width suffix preserves wrapped line geometry")
+    func zeroWidthSuffixPreservesWrap() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 140, height: 240))
         textEditorView.font = UIFont.systemFont(ofSize: 20)
         textEditorView.textContentInsets = .zero
@@ -217,8 +217,8 @@ struct TextEditorViewTextKit2Tests {
         }
     }
 
-    @Test
-    func `Same suffixed image attribute across adjacent characters creates each suffix`() async throws {
+    @Test("Same suffixed image attribute across adjacent characters creates each suffix")
+    func adjacentSuffixAttributesCreateEachSuffix() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 70, height: 18)).image { context in
             UIColor.systemRed.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: 70, height: 18)))
@@ -248,8 +248,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Nonterminal left to right suffix occupies reserved width without covering text`() async throws {
+    @Test("Nonterminal left to right suffix occupies reserved width without covering text")
+    func leftToRightSuffixReservesWidth() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 240, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -304,8 +304,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffix in second paragraph uses document range and second line geometry`() async throws {
+    @Test("Suffix in second paragraph uses document range and second line geometry")
+    func secondParagraphUsesDocumentGeometry() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 240, height: 140))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -358,8 +358,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed image on part of emoji preserves UTF16 text and selection`() async throws {
+    @Test("Suffixed image on part of emoji preserves UTF16 text and selection")
+    func emojiSuffixPreservesUTF16Selection() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 18)).image { context in
             UIColor.systemRed.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: 40, height: 18)))
@@ -389,8 +389,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed view on emoji is laid out without changing UTF16 selection`() async throws {
+    @Test("Suffixed view on emoji is laid out without changing UTF16 selection")
+    func emojiViewSuffixPreservesSelection() async throws {
         let suffixView = UIView()
         var laidOutFrames: [CGRect] = []
         let textAttributesDelegate = TextAttributesDelegate { attributedString in
@@ -419,8 +419,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Tall zero width suffix preserves right to left caret geometry`() async throws {
+    @Test("Tall zero width suffix preserves right to left caret geometry")
+    func zeroWidthSuffixPreservesRightToLeftCaret() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 80)).image { _ in }
         let textAttributesDelegate = TextAttributesDelegate { attributedString in
             let attachment = TextAttributes.SuffixedAttachment(
@@ -460,8 +460,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Nonzero suffix width is reserved inside right to left shaping`() async throws {
+    @Test("Nonzero suffix width is reserved inside right to left shaping")
+    func rightToLeftSuffixReservesShapingWidth() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -516,8 +516,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Distinct suffixes inside one Arabic shaping cluster reserve independent gaps`() async throws {
+    @Test("Distinct suffixes inside one Arabic shaping cluster reserve independent gaps")
+    func arabicClusterReservesIndependentGaps() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 360, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -577,8 +577,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(try #require(darkPixelCount(in: secondFrame, of: textEditorView)) == 0)
     }
 
-    @Test
-    func `Terminal right to left suffix occupies the visual trailing gap`() async throws {
+    @Test("Terminal right to left suffix occupies the visual trailing gap")
+    func terminalRightToLeftSuffixUsesTrailingGap() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -623,8 +623,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(suffixFrame.maxX <= textFrame.maxX + 1)
     }
 
-    @Test
-    func `Wide suffix that soft wraps stays beside its host line`() async throws {
+    @Test("Wide suffix that soft wraps stays beside its host line")
+    func wideSuffixStaysWithHostLine() async throws {
         let textEditorView = TextEditorView(frame: CGRect(x: 0, y: 0, width: 130, height: 180))
         textEditorView.backgroundColor = .white
         textEditorView.font = UIFont.systemFont(ofSize: 40)
@@ -671,8 +671,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(try #require(darkPixelCount(in: suffixFrame, of: textEditorView)) == 0)
     }
 
-    @Test
-    func `Right to left suffix that causes wrapping reserves width on its host line`() async throws {
+    @Test("Right to left suffix that causes wrapping reserves width on its host line")
+    func wrappingRightToLeftSuffixReservesHostLine() async throws {
         // This narrow reference wraps the same Arabic pair without any suffix. It gives
         // us the contextual glyph width of each soft-wrapped line independently of the
         // suffix under test.
@@ -831,8 +831,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Scrolling materializes suffixes for the new TextKit 2 viewport`() async throws {
+    @Test("Scrolling materializes suffixes for the new TextKit 2 viewport")
+    func scrollingMaterializesViewportSuffixes() async throws {
         let topImage = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { _ in }
         let bottomImage = UIGraphicsImageRenderer(size: CGSize(width: 14, height: 12)).image { _ in }
         let text = Array(repeating: "line", count: 400).joined(separator: "\n")
@@ -901,8 +901,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed view is laid out in text container without changing text`() async throws {
+    @Test("Suffixed view is laid out in text container without changing text")
+    func suffixedViewPreservesText() async throws {
         let suffixView = UIView()
         var laidOutFrames: [CGRect] = []
         let attachmentSize = CGSize(width: 24, height: 18)
@@ -937,8 +937,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Suffixed view closure receives text container coordinates without insets`() async throws {
+    @Test("Suffixed view closure receives text container coordinates without insets")
+    func suffixedViewCoordinatesExcludeInsets() async throws {
         let suffixView = UIView()
         var laidOutFrames: [CGRect] = []
         let textAttributesDelegate = TextAttributesDelegate { attributedString in
@@ -972,8 +972,8 @@ struct TextEditorViewTextKit2Tests {
         #expect(textEditorView.textView.textLayoutManager != nil)
     }
 
-    @Test
-    func `Removed suffixed view is not laid out again`() async throws {
+    @Test("Removed suffixed view is not laid out again")
+    func removedSuffixedViewIsNotLaidOutAgain() async throws {
         let suffixView = UIView()
         var layoutCount = 0
         let attachmentDelegate = TextAttributesDelegate { attributedString in

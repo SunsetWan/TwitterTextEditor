@@ -81,8 +81,8 @@ struct SchedulerTest {
 
     // MARK: -
 
-    @Test
-    func `Debounce scheduler performs a scheduled block once`() async {
+    @Test("Debounce scheduler performs a scheduled block once")
+    func debouncePerformsScheduledBlockOnce() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -98,8 +98,8 @@ struct SchedulerTest {
         #expect(performedCount == 1)
     }
 
-    @Test
-    func `Debounce scheduler performs immediately`() async {
+    @Test("Debounce scheduler performs immediately")
+    func debouncePerformsImmediately() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -115,8 +115,8 @@ struct SchedulerTest {
         #expect(performedCount == 1)
     }
 
-    @Test
-    func `Debounce scheduler schedules again after performing`() async {
+    @Test("Debounce scheduler schedules again after performing")
+    func debounceSchedulesAgainAfterPerforming() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -135,8 +135,8 @@ struct SchedulerTest {
 
     // MARK: -
 
-    @Test
-    func `Content filter scheduler performs only the latest schedule`() async {
+    @Test("Content filter scheduler performs only the latest schedule")
+    func contentFilterPerformsOnlyLatestSchedule() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -162,8 +162,8 @@ struct SchedulerTest {
         #expect(results[optional: 1]?.success == "purr")
     }
 
-    @Test
-    func `Content filter scheduler uses its cache`() async {
+    @Test("Content filter scheduler uses its cache")
+    func contentFilterUsesCache() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -192,8 +192,8 @@ struct SchedulerTest {
         #expect(results[optional: 1]?.success == "meow")
     }
 
-    @Test
-    func `Content filter scheduler cancels pending work before using its cache`() async {
+    @Test("Content filter scheduler cancels pending work before using its cache")
+    func contentFilterCancelsPendingWorkBeforeCache() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -229,8 +229,8 @@ struct SchedulerTest {
         #expect(results[optional: 2]?.success == "meow")
     }
 
-    @Test
-    func `Content filter scheduler rejects an obsolete result`() async {
+    @Test("Content filter scheduler rejects an obsolete result")
+    func contentFilterRejectsObsoleteResult() async {
         var performedCount = 0
         var pendingResults = [(input: String, completion: (Result<String, Error>) -> Void)]()
 
@@ -271,8 +271,8 @@ struct SchedulerTest {
         #expect(results[optional: 1]?.success == "purr")
     }
 
-    @Test
-    func `Content filter scheduler cache hit invalidates an older in flight result`() async {
+    @Test("Content filter scheduler cache hit invalidates an older in flight result")
+    func cacheHitInvalidatesOlderInFlightResult() async {
         var filteredInputs = [String]()
         var pendingFirstCompletion: ((Result<String, Error>) -> Void)?
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
@@ -318,8 +318,8 @@ struct SchedulerTest {
         #expect(filteredInputs == ["second", "first"])
     }
 
-    @Test
-    func `Content filter scheduler delivers a background result on the main thread`() async {
+    @Test("Content filter scheduler delivers a background result on the main thread")
+    func contentFilterDeliversBackgroundResultOnMainThread() async {
         let delivery = SchedulerTestState<(isMainThread: Bool, value: String?)?>(nil)
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             DispatchQueue.global().async {

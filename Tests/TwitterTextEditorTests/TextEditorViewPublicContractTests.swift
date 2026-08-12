@@ -55,8 +55,8 @@ private final class PublicTestState<Value>: @unchecked Sendable {
 @MainActor
 @Suite
 struct TextEditorViewPublicContractTests {
-    @Test
-    func `Replacing emoji uses UTF16 offsets and moves selection`() throws {
+    @Test("Replacing emoji uses UTF16 offsets and moves selection")
+    func replacingEmojiMovesSelection() throws {
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.text = "A🐈B"
         textEditorView.selectedRange = NSRange(location: 4, length: 0)
@@ -70,8 +70,8 @@ struct TextEditorViewPublicContractTests {
         #expect(textEditorView.selectedRange == NSRange(location: 3, length: 0))
     }
 
-    @Test
-    func `Invalid replacement range throws without changing editing content`() {
+    @Test("Invalid replacement range throws without changing editing content")
+    func invalidReplacementRangePreservesContent() {
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.text = "A🐈B"
         textEditorView.selectedRange = NSRange(location: 4, length: 0)
@@ -86,8 +86,8 @@ struct TextEditorViewPublicContractTests {
         #expect(textEditorView.selectedRange == NSRange(location: 4, length: 0))
     }
 
-    @Test
-    func `Programmatic editing changes do not notify change observer`() async throws {
+    @Test("Programmatic editing changes do not notify change observer")
+    func programmaticChangesSkipObserver() async throws {
         let observer = PublicChangeObserver()
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.changeObserver = observer
@@ -105,8 +105,8 @@ struct TextEditorViewPublicContractTests {
         #expect(textEditorView.selectedRange == NSRange(location: 3, length: 0))
     }
 
-    @Test
-    func `Latest asynchronous text attributes result wins`() async throws {
+    @Test("Latest asynchronous text attributes result wins")
+    func latestAsyncAttributesWins() async throws {
         let delegate = DeferredTextAttributesDelegate()
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.text = "M"
@@ -142,8 +142,8 @@ struct TextEditorViewPublicContractTests {
         #expect(fittingSize.height > 72)
     }
 
-    @Test
-    func `Size that fits includes public text content insets`() {
+    @Test("Size that fits includes public text content insets")
+    func sizeThatFitsIncludesInsets() {
         let textEditorView = TextEditorView(frame: .zero)
         textEditorView.font = UIFont.systemFont(ofSize: 20)
         textEditorView.text = "M"

@@ -30,8 +30,8 @@ private final class Locked<Value>: @unchecked Sendable {
 }
 
 struct SequenceTest {
-    @Test
-    func `For each continues through the sequence`() async {
+    @Test("For each continues through the sequence")
+    func forEachContinuesThroughSequence() async {
         let sequence = [1, 2, 3]
         let queue = DispatchQueue(label: #function)
         let results = Locked([Int]())
@@ -48,8 +48,8 @@ struct SequenceTest {
         #expect(results.value == sequence)
     }
 
-    @Test
-    func `For each breaks after the first element`() async {
+    @Test("For each breaks after the first element")
+    func forEachBreaksAfterFirstElement() async {
         let sequence = [1, 2, 3]
         let queue = DispatchQueue(label: #function)
         let results = Locked([Int]())
@@ -66,8 +66,8 @@ struct SequenceTest {
         #expect(results.value == [1])
     }
 
-    @Test
-    func `For each works without a completion closure`() async {
+    @Test("For each works without a completion closure")
+    func forEachWorksWithoutCompletion() async {
         let sequence = [1, 2, 3]
         let queue = DispatchQueue(label: #function)
         let results = Locked([Int]())
@@ -89,8 +89,8 @@ struct SequenceTest {
         #expect(results.value == sequence)
     }
 
-    @Test
-    func `For each supports an asynchronous body`() async {
+    @Test("For each supports an asynchronous body")
+    func forEachSupportsAsynchronousBody() async {
         let sequence = [1, 2, 3]
         let queue = DispatchQueue(label: #function)
         let results = Locked([Int]())

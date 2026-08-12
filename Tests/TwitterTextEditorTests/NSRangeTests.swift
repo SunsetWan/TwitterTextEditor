@@ -37,8 +37,8 @@ struct NSRangeTests {
         }
     }
 
-    @Test(arguments: rangeWithLengthCases)
-    func `A nonempty range moves when text is replaced`(_ testCase: MovementCase) {
+    @Test("A nonempty range moves when text is replaced", arguments: rangeWithLengthCases)
+    func nonemptyRangeMovesWhenTextIsReplaced(_ testCase: MovementCase) {
         let movedRange = testCase.range.movedByReplacing(
             range: testCase.replacedRange,
             length: testCase.replacementLength
@@ -47,8 +47,8 @@ struct NSRangeTests {
         #expect(movedRange == testCase.expectedRange)
     }
 
-    @Test(arguments: emptyRangeCases)
-    func `An empty range moves when text is replaced`(_ testCase: MovementCase) {
+    @Test("An empty range moves when text is replaced", arguments: emptyRangeCases)
+    func emptyRangeMovesWhenTextIsReplaced(_ testCase: MovementCase) {
         let movedRange = testCase.range.movedByReplacing(
             range: testCase.replacedRange,
             length: testCase.replacementLength
