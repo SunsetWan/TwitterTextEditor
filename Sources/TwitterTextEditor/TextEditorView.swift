@@ -361,15 +361,20 @@ public final class TextEditorView: UIView {
         // `layoutManager` here: doing so asks UITextView to irreversibly fall back to
         // TextKit 1 and can discard current layout state.
         let textView = TextView(frame: .zero, textContainer: nil)
-        precondition(textView.textLayoutManager != nil, "TextEditorView requires TextKit 2")
-        guard let textContentStorage = textView.textLayoutManager?.textContentManager as? NSTextContentStorage else {
+        guard let textLayoutManager = textView.textLayoutManager else {
+            preconditionFailure("TextEditorView requires TextKit 2")
+        }
+        guard let textContentStorage = textLayoutManager.textContentManager as? NSTextContentStorage else {
             preconditionFailure("TextEditorView requires TextKit 2 content storage")
         }
 
         // The delegate supplies equal-length presentation paragraphs for suffixes. Its
-        // delegate property is weak, so assign the strong stored property below before
-        // leaving initialization.
+        // content and layout delegate properties are weak, so assign the strong stored
+        // property below before leaving initialization. The layout delegate supplies a
+        // custom TextKit 2 fragment only for restoring contextual RTL glyphs whose
+        // presentation carriers are deliberately transparent.
         textContentStorage.delegate = suffixPresentation
+        suffixPresentation.install(on: textLayoutManager)
 
         self.suffixPresentation = suffixPresentation
         self.textView = textView
@@ -840,7 +845,6 @@ public final class TextEditorView: UIView {
 
             do {
                 log(type: .debug, "Set text attributes: %@", updatedAttributedString.loggingDescription)
-                self.suffixPresentation.backingContentWillChange()
                 try self.textStorage.setAttributes(from: updatedAttributedString)
                 if let textLayoutManager = self.textView.textLayoutManager {
                     // Attribute updates invalidate TextKit 2 fragments. Ask the viewport
@@ -949,7 +953,6 @@ public final class TextEditorView: UIView {
             textView.textContainerInset
         }
         set {
-            suffixPresentation.layoutGeometryWillChange()
             textView.textContainerInset = newValue
 
             updatePlaceholderText()
@@ -958,14 +961,21 @@ public final class TextEditorView: UIView {
     }
 
     /**
-     The current default line break mode if none is specified in the text attributes.
+     The line break mode used for the text container's final visible line.
+
+     Ordinary line wrapping comes from `NSParagraphStyle.lineBreakMode`; when no
+     paragraph style is present, UIKit uses the paragraph-style default of word wrapping.
+     This property forwards `NSTextContainer.lineBreakMode`, which controls how a final
+     line is clipped or truncated when the container limits the visible text.
+
+     - SeeAlso:
+       - `placeholderTextLineBreakMode`
      */
     public var defaultLineBreakMode: NSLineBreakMode {
         get {
             textView.textContainer.lineBreakMode
         }
         set {
-            suffixPresentation.layoutGeometryWillChange()
             textView.textContainer.lineBreakMode = newValue
 
             updatePlaceholderTextView()
@@ -986,7 +996,6 @@ public final class TextEditorView: UIView {
             textView.textContainer.lineFragmentPadding
         }
         set {
-            suffixPresentation.layoutGeometryWillChange()
             textView.textContainer.lineFragmentPadding = newValue
 
             updatePlaceholderText()
@@ -1446,7 +1455,7 @@ public final class TextEditorView: UIView {
 
     /// :nodoc:
     public override func sizeThatFits(_ size: CGSize) -> CGSize {
-        textView.sizeThatFits(size)
+        suffixPresentation.sizeThatFits(size, in: textView)
     }
 
     /// :nodoc:
@@ -1455,6 +1464,7 @@ public final class TextEditorView: UIView {
 
         // UITextView owns the TextKit 2 viewport and must lay it out before accessory
         // views can be positioned from caret geometry.
+        suffixPresentation.prepareLayout(in: textView)
         textView.layoutIfNeeded()
         layoutSuffixPresentation()
     }
@@ -1642,9 +1652,6 @@ extension TextEditorView: NSTextStorageDelegate {
                             range editedRange: NSRange,
                             changeInLength delta: Int)
     {
-        if editedMask.contains(.editedCharacters) {
-            suffixPresentation.backingContentWillChange()
-        }
         setNeedsLayout()
 
         log(type: .debug,

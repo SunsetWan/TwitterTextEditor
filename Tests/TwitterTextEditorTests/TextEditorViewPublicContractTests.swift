@@ -33,6 +33,35 @@ private final class DeferredTextAttributesDelegate: TextEditorViewTextAttributes
     }
 }
 
+private final class PublicSuffixAttributesDelegate: TextEditorViewTextAttributesDelegate {
+    let image: UIImage
+    private(set) var updateCount = 0
+
+    init(width: CGFloat) {
+        image = UIGraphicsImageRenderer(
+            size: CGSize(width: width, height: 20)
+        ).image { _ in }
+    }
+
+    func textEditorView(
+        _ textEditorView: TextEditorView,
+        updateAttributedString attributedString: NSAttributedString,
+        completion: @escaping (NSAttributedString?) -> Void
+    ) {
+        let result = NSMutableAttributedString(attributedString: attributedString)
+        result.addAttribute(
+            .suffixedAttachment,
+            value: TextAttributes.SuffixedAttachment(
+                size: image.size,
+                attachment: .image(image)
+            ),
+            range: NSRange(location: 0, length: 1)
+        )
+        updateCount += 1
+        completion(result)
+    }
+}
+
 private final class PublicTestState<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: Value
@@ -156,6 +185,48 @@ struct TextEditorViewPublicContractTests {
         let sizeWithInsets = textEditorView.sizeThatFits(proposal)
 
         #expect(abs(sizeWithInsets.height - sizeWithoutInsets.height - 24) <= 0.5)
+    }
+
+    @Test("RTL suffix size that fits uses each proposed width")
+    func rightToLeftSuffixSizeThatFitsUsesProposalWidth() async throws {
+        let shared = try await makeSuffixEditor(frameWidth: 320)
+        let narrowProposal = CGSize(width: 55, height: CGFloat.greatestFiniteMagnitude)
+        let wideProposal = CGSize(width: 120, height: CGFloat.greatestFiniteMagnitude)
+
+        let sharedNarrow = shared.view.sizeThatFits(narrowProposal)
+        let sharedWide = shared.view.sizeThatFits(wideProposal)
+        let freshNarrow = try await makeSuffixEditor(frameWidth: narrowProposal.width)
+            .view.sizeThatFits(narrowProposal)
+        let freshWide = try await makeSuffixEditor(frameWidth: wideProposal.width)
+            .view.sizeThatFits(wideProposal)
+        let zeroFrame = try await makeSuffixEditor(frameWidth: 0)
+            .view.sizeThatFits(narrowProposal)
+
+        #expect(abs(sharedNarrow.height - freshNarrow.height) <= 0.5)
+        #expect(abs(sharedWide.height - freshWide.height) <= 0.5)
+        #expect(abs(zeroFrame.height - freshNarrow.height) <= 0.5)
+        #expect(sharedNarrow.height > sharedWide.height)
+        #expect(shared.delegate.updateCount == 1)
+    }
+
+    private func makeSuffixEditor(
+        frameWidth: CGFloat
+    ) async throws -> (view: TextEditorView, delegate: PublicSuffixAttributesDelegate) {
+        let view = TextEditorView(
+            frame: CGRect(x: 0, y: 0, width: frameWidth, height: 360)
+        )
+        view.font = UIFont.systemFont(ofSize: 40)
+        view.textContentInsets = .zero
+        view.textContentPadding = 0
+        view.text = "مممم"
+        let delegate = PublicSuffixAttributesDelegate(width: 20)
+        view.textAttributesDelegate = delegate
+        view.setNeedsUpdateTextAttributes()
+        try #require(await waitUntil { delegate.updateCount == 1 })
+        if frameWidth > 0 {
+            view.layoutIfNeeded()
+        }
+        return (view, delegate)
     }
 }
 
