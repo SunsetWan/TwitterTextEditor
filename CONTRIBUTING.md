@@ -56,7 +56,7 @@ It is useful to use [`Example.xcodeproj`](Examples/) for actual Twitter Text Edi
 
 ### Testing
 
-Use regular `XCTest` and Swift Package structure.
+Use [Swift Testing](https://developer.apple.com/xcode/swift-testing/) and Swift Package structure.
 
 It is highly recommended to write unit tests for applicable modules, such as the module that provides specific logics.
 However often it is not easy for writing unit tests for the part of user interactions on user interface components.
@@ -89,9 +89,10 @@ $ make fix
 
 ### Documentation
 
-It is using [Jazzy](https://github.com/realm/jazzy) to generate documents from the inline documentation comments.
+It uses [DocC](https://www.swift.org/documentation/docc/) to generate documentation
+from the documentation catalog and inline documentation comments.
 
-Use following command to install Jazzy locally and update the documents.
+Use the following command to update the documentation.
 The documents generated are placed at `.build/documentation`.
 
 ```
@@ -101,7 +102,8 @@ $ make doc
 Use following command to run a local web server for browsing the documents.
 It keeps updating the documents when any source files are changed.
 
-You can browse it at <http://localhost:3000/>.
+You can browse it at
+<http://localhost:3000/TwitterTextEditor/documentation/twittertexteditor>.
 
 ```
 $ make doc-server

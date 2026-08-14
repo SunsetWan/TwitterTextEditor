@@ -8,8 +8,8 @@
 
 import CoreFoundation
 import Foundation
-import MobileCoreServices
 import UIKit
+import UniformTypeIdentifiers
 
 /**
  A delegate for handling text input behaviors.
@@ -69,6 +69,23 @@ protocol TextViewTextPasteDelegate: UITextPasteDelegate {
  A base text view.
  */
 final class TextView: UITextView {
+    /**
+     Initializes the subclass through UITextView's designated initializer.
+
+     `UITextView.init(usingTextLayoutManager:)` is a convenience initializer. Calling
+     the inherited convenience initializer on this Swift subclass bypasses initialization
+     of its stored delegate forwarder. Passing `nil` here lets UIKit create its TextKit 2
+     stack while preserving normal Swift subclass initialization.
+     */
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+
     private var preferredTextInputModePrimaryLanguage: String?
 
     /**
@@ -229,7 +246,12 @@ final class TextView: UITextView {
                 let isPasteboardConformingAcceptableType =
                     acceptableTypeIdentifiers.contains { acceptableTypeIdentifier in
                         UIPasteboard.general.types.contains { type in
-                            UTTypeConformsTo(type as CFString, acceptableTypeIdentifier as CFString)
+                            guard let type = UTType(type),
+                                  let acceptableType = UTType(acceptableTypeIdentifier)
+                            else {
+                                return false
+                            }
+                            return type.conforms(to: acceptableType)
                         }
                     }
                 if isPasteboardConformingAcceptableType {
@@ -393,6 +415,17 @@ final class TextView: UITextView {
     // MARK: - UIScrollView
 
     private let delegateForwarder = TextViewDelegateForwarder()
+
+    /// Called when scrolling changes the TextKit 2 viewport.
+    ///
+    /// This hook lives alongside, rather than in place of, the externally supplied
+    /// `UIScrollViewDelegate`. The outer editor uses it to materialize only suffixes
+    /// that enter the viewport.
+    var textViewportDidScroll: (() -> Void)? {
+        didSet {
+            delegateForwarder.textViewportDidScroll = textViewportDidScroll
+        }
+    }
 
     var textViewDelegate: UITextViewDelegate? {
         get {

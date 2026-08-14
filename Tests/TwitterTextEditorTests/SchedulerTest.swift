@@ -8,17 +8,17 @@
 
 import Foundation
 @testable import TwitterTextEditor
-import XCTest
+import Testing
 
 private protocol Runner {
-    func perform(_: @escaping () -> Void)
+    func perform(_: @escaping @Sendable () -> Void)
 }
 
 extension RunLoop: Runner {
 }
 
 extension DispatchQueue: Runner {
-    func perform(_ block: @escaping () -> Void) {
+    func perform(_ block: @escaping @Sendable () -> Void) {
         async(execute: block)
     }
 }
@@ -49,18 +49,40 @@ private extension Result {
     }
 }
 
-final class SchedulerTest: XCTestCase {
-    private func wait(for runner: Runner) {
-        let expectation = XCTestExpectation(description: String(describing: runner))
+private final class SchedulerTestState<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ value: Value) {
+        storage = value
+    }
+
+    func withValue<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&storage)
+    }
+
+    var value: Value {
+        withValue { $0 }
+    }
+}
+
+@Suite(.serialized)
+@MainActor
+struct SchedulerTest {
+    private func wait(for runner: Runner) async -> Bool {
+        let completed = SchedulerTestState(false)
         runner.perform {
-            expectation.fulfill()
+            completed.withValue { $0 = true }
         }
-        wait(for: [expectation], timeout: 3.0)
+        return await waitUntil { completed.value }
     }
 
     // MARK: -
 
-    func testDebounceSchedulerShouldPerformScheduleOnce() {
+    @Test("Debounce scheduler performs a scheduled block once")
+    func debouncePerformsScheduledBlockOnce() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -69,14 +91,15 @@ final class SchedulerTest: XCTestCase {
         scheduler.schedule()
         scheduler.schedule()
 
-        XCTAssertEqual(performedCount, 0)
+        #expect(performedCount == 0)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
+        #expect(performedCount == 1)
     }
 
-    func testDebounceSchedulerShouldPerform() {
+    @Test("Debounce scheduler performs immediately")
+    func debouncePerformsImmediately() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -85,14 +108,15 @@ final class SchedulerTest: XCTestCase {
         scheduler.schedule()
         scheduler.perform()
 
-        XCTAssertEqual(performedCount, 1)
+        #expect(performedCount == 1)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
+        #expect(performedCount == 1)
     }
 
-    func testDebounceSchedulerShouldPerformScheduleAfterPerform() {
+    @Test("Debounce scheduler schedules again after performing")
+    func debounceSchedulesAgainAfterPerforming() async {
         var performedCount = 0
         let scheduler = DebounceScheduler {
             performedCount += 1
@@ -102,16 +126,17 @@ final class SchedulerTest: XCTestCase {
         scheduler.perform()
         scheduler.schedule()
 
-        XCTAssertEqual(performedCount, 1)
+        #expect(performedCount == 1)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 2)
+        #expect(performedCount == 2)
     }
 
     // MARK: -
 
-    func testContentFilterSchedulerShouldPerformOnce() {
+    @Test("Content filter scheduler performs only the latest schedule")
+    func contentFilterPerformsOnlyLatestSchedule() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -119,25 +144,26 @@ final class SchedulerTest: XCTestCase {
         }
 
         var results = [Result<String, Error>]()
-        let completion = { (result: Result<String, Error>) -> Void in
+        let completion = { (result: Result<String, Error>) in
             results.append(result)
         }
 
         scheduler.schedule("meow", completion: completion)
         scheduler.schedule("purr", completion: completion)
 
-        XCTAssertEqual(performedCount, 0)
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[optional: 0]?.failure as? SchedulerError, .cancelled)
+        #expect(performedCount == 0)
+        #expect(results.count == 1)
+        #expect(results[optional: 0]?.failure as? SchedulerError == .cancelled)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 2)
-        XCTAssertEqual(results[optional: 1]?.success, "purr")
+        #expect(performedCount == 1)
+        #expect(results.count == 2)
+        #expect(results[optional: 1]?.success == "purr")
     }
 
-    func testContentFilterSchedulerShouldUseCache() {
+    @Test("Content filter scheduler uses its cache")
+    func contentFilterUsesCache() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -145,28 +171,29 @@ final class SchedulerTest: XCTestCase {
         }
 
         var results = [Result<String, Error>]()
-        let completion = { (result: Result<String, Error>) -> Void in
+        let completion = { (result: Result<String, Error>) in
             results.append(result)
         }
 
         scheduler.schedule("meow", completion: completion)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[optional: 0]?.success, "meow")
+        #expect(performedCount == 1)
+        #expect(results.count == 1)
+        #expect(results[optional: 0]?.success == "meow")
 
         scheduler.schedule("meow", completion: completion)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 2)
-        XCTAssertEqual(results[optional: 1]?.success, "meow")
+        #expect(performedCount == 1)
+        #expect(results.count == 2)
+        #expect(results[optional: 1]?.success == "meow")
     }
 
-    func testContentFilterSchedulerShouldPerformOnceAndUseCache() {
+    @Test("Content filter scheduler cancels pending work before using its cache")
+    func contentFilterCancelsPendingWorkBeforeCache() async {
         var performedCount = 0
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
@@ -174,73 +201,155 @@ final class SchedulerTest: XCTestCase {
         }
 
         var results = [Result<String, Error>]()
-        let completion = { (result: Result<String, Error>) -> Void in
+        let completion = { (result: Result<String, Error>) in
             results.append(result)
         }
 
         scheduler.schedule("meow", completion: completion)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[optional: 0]?.success, "meow")
+        #expect(performedCount == 1)
+        #expect(results.count == 1)
+        #expect(results[optional: 0]?.success == "meow")
 
         // This schedule should be cancelled.
         scheduler.schedule("purr", completion: completion)
         // This schedule should use cache.
         scheduler.schedule("meow", completion: completion)
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 2)
-        XCTAssertEqual(results[optional: 1]?.failure as? SchedulerError, .cancelled)
+        #expect(performedCount == 1)
+        #expect(results.count == 2)
+        #expect(results[optional: 1]?.failure as? SchedulerError == .cancelled)
 
-        wait(for: RunLoop.main)
+        #expect(await wait(for: RunLoop.main))
 
-        XCTAssertEqual(performedCount, 1)
-        XCTAssertEqual(results.count, 3)
-        XCTAssertEqual(results[optional: 2]?.success, "meow")
+        #expect(performedCount == 1)
+        #expect(results.count == 3)
+        #expect(results[optional: 2]?.success == "meow")
     }
 
-    func testContentFilterSchedulerShouldFailWithNotLatest() {
+    @Test("Content filter scheduler rejects an obsolete result")
+    func contentFilterRejectsObsoleteResult() async {
         var performedCount = 0
-        var delayedPerformedCount = 0
+        var pendingResults = [(input: String, completion: (Result<String, Error>) -> Void)]()
 
         let scheduler = ContentFilterScheduler<String, String> { input, completion in
             performedCount += 1
-            DispatchQueue.main.async {
-                delayedPerformedCount += 1
+            pendingResults.append((input, completion))
+        }
+
+        var results = [Result<String, Error>]()
+        let completion = { (result: Result<String, Error>) in
+            results.append(result)
+        }
+
+        #expect(performedCount == 0)
+
+        scheduler.schedule("meow", completion: completion)
+
+        #expect(await wait(for: RunLoop.main))
+
+        #expect(performedCount == 1)
+        #expect(pendingResults.count == 1)
+
+        scheduler.schedule("purr", completion: completion)
+        #expect(await wait(for: RunLoop.main))
+
+        #expect(performedCount == 2)
+        #expect(pendingResults.count == 2)
+
+        // Complete the older request only after the newer request has installed its token.
+        // This makes the stale-result ordering explicit instead of depending on the relative
+        // scheduling behavior of RunLoop and DispatchQueue.
+        pendingResults[0].completion(.success(pendingResults[0].input))
+        pendingResults[1].completion(.success(pendingResults[1].input))
+
+        #expect(performedCount == 2)
+        #expect(results.count == 2)
+        #expect(results[optional: 0]?.failure as? SchedulerError == .notLatest)
+        #expect(results[optional: 1]?.success == "purr")
+    }
+
+    @Test("Content filter scheduler cache hit invalidates an older in flight result")
+    func cacheHitInvalidatesOlderInFlightResult() async {
+        var filteredInputs = [String]()
+        var pendingFirstCompletion: ((Result<String, Error>) -> Void)?
+        let scheduler = ContentFilterScheduler<String, String> { input, completion in
+            filteredInputs.append(input)
+            if input == "first" {
+                pendingFirstCompletion = completion
+            } else {
+                completion(.success("cached-second"))
+            }
+        }
+
+        var primingResult: Result<String, Error>?
+        scheduler.schedule("second") { result in
+            primingResult = result
+        }
+        #expect(await wait(for: RunLoop.main))
+        #expect(primingResult?.success == "cached-second")
+
+        var firstResult: Result<String, Error>?
+        scheduler.schedule("first") { result in
+            firstResult = result
+        }
+        #expect(await wait(for: RunLoop.main))
+        #expect(pendingFirstCompletion != nil)
+
+        var cachedSecondResult: Result<String, Error>?
+        scheduler.schedule("second") { result in
+            cachedSecondResult = result
+        }
+        #expect(await wait(for: RunLoop.main))
+        #expect(cachedSecondResult?.success == "cached-second")
+
+        pendingFirstCompletion?(.success("obsolete-first"))
+        #expect(firstResult?.failure as? SchedulerError == .notLatest)
+
+        // A final request proves the obsolete result did not replace the cached value.
+        var retainedCacheResult: Result<String, Error>?
+        scheduler.schedule("second") { result in
+            retainedCacheResult = result
+        }
+        #expect(await wait(for: RunLoop.main))
+        #expect(retainedCacheResult?.success == "cached-second")
+        #expect(filteredInputs == ["second", "first"])
+    }
+
+    @Test("Content filter scheduler delivers a background result on the main thread")
+    func contentFilterDeliversBackgroundResultOnMainThread() async {
+        let delivery = SchedulerTestState<(isMainThread: Bool, value: String?)?>(nil)
+        let scheduler = ContentFilterScheduler<String, String> { input, completion in
+            DispatchQueue.global().async {
                 completion(.success(input))
             }
         }
 
-        var results = [Result<String, Error>]()
-        let completion = { (result: Result<String, Error>) -> Void in
-            results.append(result)
+        scheduler.schedule("meow") { result in
+            delivery.withValue { value in
+                value = (Thread.isMainThread, try? result.get())
+            }
         }
 
-        XCTAssertEqual(performedCount, 0)
-        XCTAssertEqual(delayedPerformedCount, 0)
-
-        scheduler.schedule("meow", completion: completion)
-
-        wait(for: RunLoop.main)
-
-        XCTAssertEqual(performedCount, 1)
-        // `DispatchQueue.main.async` is executed always later than `RunLoop.main.perform`.
-        // At this moment, previous schedule completion is not called.
-        XCTAssertEqual(delayedPerformedCount, 0)
-
-        scheduler.schedule("purr", completion: completion)
-
-        // This will wait both first and second schedule completions because
-        // `DispatchQueue.main` is a serial queue.
-        wait(for: DispatchQueue.main)
-
-        XCTAssertEqual(performedCount, 2)
-        XCTAssertEqual(delayedPerformedCount, 2)
-        XCTAssertEqual(results.count, 2)
-        XCTAssertEqual(results[optional: 0]?.failure as? SchedulerError, .notLatest)
-        XCTAssertEqual(results[optional: 1]?.success, "purr")
+        #expect(await waitUntil { delivery.value != nil })
+        #expect(delivery.value?.isMainThread == true)
+        #expect(delivery.value?.value == "meow")
     }
+}
+
+private func waitUntil(
+    timeout: Duration = .seconds(3),
+    condition: @escaping @Sendable () -> Bool
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while clock.now < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return condition()
 }

@@ -6,12 +6,37 @@ on:
 
 jobs:
   check-commit:
-    runs-on: macOS-12
+    runs-on: macos-15
 
     steps:
-      - name: Use Xcode 14.2
+      - name: Use Xcode 16.4
         run: |
-          sudo xcode-select -s /Applications/Xcode_14.2.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Create iOS 18.5 simulator
+        run: |
+          # Initializing CoreSimulator explicitly avoids a hosted-runner race where
+          # xcodebuild sees only the generic simulator destination.
+          xcrun simctl list runtimes | grep -F "iOS 18.5"
+          simulator_id="$(xcrun simctl create \
+            "TwitterTextEditor-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro" \
+            "com.apple.CoreSimulator.SimRuntime.iOS-18-5")"
+          echo "TEST_DEVICE_ID=$simulator_id" >> "$GITHUB_ENV"
+
+      - name: Install SwiftLint
+        run: |
+          archive="$RUNNER_TEMP/portable_swiftlint.zip"
+          install_directory="$RUNNER_TEMP/swiftlint"
+          curl --fail --location --silent --show-error \
+            https://github.com/realm/SwiftLint/releases/download/0.59.1/portable_swiftlint.zip \
+            --output "$archive"
+          echo "58f9be8a4677900c945e2c618168223f4dd620a0cc65c9ccc5ea0f70433e89c1  $archive" \
+            | shasum -a 256 --check
+          unzip -q "$archive" -d "$install_directory"
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 "$install_directory/swiftlint" "$HOME/.local/bin/swiftlint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Current platform versions
         run: |
@@ -21,7 +46,7 @@ jobs:
           swiftlint version
 
       - name: Checkout default branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
 
       - name: Run lint
         run: |
@@ -29,7 +54,7 @@ jobs:
 
       - name: Run test
         run: |
-          make test
+          make test TEST_DESTINATION="platform=iOS Simulator,id=$TEST_DEVICE_ID"
 
       - name: Run doc
         run: |

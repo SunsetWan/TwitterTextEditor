@@ -8,10 +8,10 @@ BUILD_DESTINATION = generic/platform=iOS
 BUILD_CONFIGURATION = Debug
 BUILD_DERIVED_DATA_PATH = .build/derived_data
 
-# Use `xcodebuild -showdestinations -scheme ...` for the destinations.
-# See also <https://github.com/actions/runner-images/blob/main/images/macos/macos-12-Readme.md>
-# for commonly available destinations.
-TEST_DESTINATION = platform=iOS Simulator,name=iPhone 14
+# Select the first iPhone simulator installed with the active Xcode. Callers such as
+# CI can still provide a reproducible destination with `TEST_DESTINATION=...`.
+TEST_DEVICE_ID = $(shell xcrun simctl list devices available | sed -nE 's/^[[:space:]]+iPhone.*\(([0-9A-F-]{36})\).*/\1/p' | head -n 1)
+TEST_DESTINATION ?= platform=iOS Simulator,id=$(TEST_DEVICE_ID)
 
 # This path depends on `BUILD_DESTINATION`.
 DOCBUILD_DOCARCHIVE_PATH = $(BUILD_DERIVED_DATA_PATH)/Build/Products/$(BUILD_CONFIGURATION)-iphoneos/$(NAME).doccarchive
@@ -57,11 +57,13 @@ build:
 
 .PHONY: test
 test:
+	# UIKit contract suites share simulator-global UI state and are intentionally serialized.
 	$(XCODEBUILD) \
 		-scheme "$(BUILD_SCHEME)" \
 		-destination "$(TEST_DESTINATION)" \
 		-configuration "$(BUILD_CONFIGURATION)" \
 		-derivedDataPath "$(BUILD_DERIVED_DATA_PATH)" \
+		-parallel-testing-enabled NO \
 		test
 
 .PHONY: docbuild

@@ -337,6 +337,8 @@ extension EditingContent: TextEditorViewEditingContent {
  */
 public final class TextEditorView: UIView {
     private let textStorage: NSTextStorage
+    private let suffixPresentation: TextKit2SuffixPresentation
+    private var isLayingOutSuffixPresentation = false
 
     let textView: TextView
 
@@ -352,15 +354,31 @@ public final class TextEditorView: UIView {
        - frame: The frame rectangle for the text editor view.
      */
     public override init(frame: CGRect) {
-        textStorage = NSTextStorage()
+        let suffixPresentation = TextKit2SuffixPresentation()
 
-        let layoutManager = LayoutManager()
-        textStorage.addLayoutManager(layoutManager)
+        // Passing a nil text container to UITextView's designated initializer opts into
+        // its default TextKit 2 object graph on iOS 16 and later. Do not access
+        // `layoutManager` here: doing so asks UITextView to irreversibly fall back to
+        // TextKit 1 and can discard current layout state.
+        let textView = TextView(frame: .zero, textContainer: nil)
+        guard let textLayoutManager = textView.textLayoutManager else {
+            preconditionFailure("TextEditorView requires TextKit 2")
+        }
+        guard let textContentStorage = textLayoutManager.textContentManager as? NSTextContentStorage else {
+            preconditionFailure("TextEditorView requires TextKit 2 content storage")
+        }
 
-        let textContainer = NSTextContainer(size: .zero)
-        layoutManager.addTextContainer(textContainer)
+        // The delegate supplies equal-length presentation paragraphs for suffixes. Its
+        // content and layout delegate properties are weak, so assign the strong stored
+        // property below before leaving initialization. The layout delegate supplies a
+        // custom TextKit 2 fragment only for restoring contextual RTL glyphs whose
+        // presentation carriers are deliberately transparent.
+        textContentStorage.delegate = suffixPresentation
+        suffixPresentation.install(on: textLayoutManager)
 
-        textView = TextView(frame: .zero, textContainer: textContainer)
+        self.suffixPresentation = suffixPresentation
+        self.textView = textView
+        textStorage = textView.textStorage
 
         editingContent = textView.editingContent
 
@@ -378,6 +396,13 @@ public final class TextEditorView: UIView {
 
         textView.textViewDelegate = self
         textView.textViewTextInputDelegate = self
+
+        // UITextView owns scrolling inside the outer view, so a scroll does not always
+        // trigger `TextEditorView.layoutSubviews()`. Follow that internal viewport while
+        // retaining the public scroll-view delegate through TextView's forwarder.
+        textView.textViewportDidScroll = { [weak self] in
+            self?.layoutSuffixPresentation()
+        }
 
         textView.pasteDelegate = self
 
@@ -821,24 +846,17 @@ public final class TextEditorView: UIView {
             do {
                 log(type: .debug, "Set text attributes: %@", updatedAttributedString.loggingDescription)
                 try self.textStorage.setAttributes(from: updatedAttributedString)
-                /*
-                 UIKit behavior workaround
-
-                 Confirmed on iOS 14.1
-
-                 When we update text attributes, even just the text color, the `_UITextContainerView` inside
-                 the `UITextView` would resize to a smaller height temporarily.
-                 The next call to `layoutSubviews` would correct this height, but since that could be
-                 in an animation block, it will get an animation from the smaller height to the correct
-                 normal height.
-
-                 To workaround this behavior, instead of calling `layoutIfNeeded`, which may have
-                 many side effects, calling `usedRect(for:)` on the layout manager with the text container
-                 associated to the text view.
-                 That recalculates to height with the correct result and actually applies the height
-                 to the `_UITextContainerView`.
-                 */
-                _ = self.textView.layoutManager.usedRect(for: self.textView.textContainer)
+                if let textLayoutManager = self.textView.textLayoutManager {
+                    // Attribute updates invalidate TextKit 2 fragments. Ask the viewport
+                    // controller to refresh its active region now, without materializing
+                    // the entire document, and let the next view pass position suffixes
+                    // from the new caret geometry.
+                    textLayoutManager.textViewportLayoutController.layoutViewport()
+                    self.textView.setNeedsLayout()
+                    self.setNeedsLayout()
+                } else {
+                    assertionFailure("TextEditorView unexpectedly fell back to TextKit 1")
+                }
             } catch {
                 log(type: .error, "Failed to set text attributes error: %@", String(describing: error))
             }
@@ -938,11 +956,20 @@ public final class TextEditorView: UIView {
             textView.textContainerInset = newValue
 
             updatePlaceholderText()
+            setNeedsLayout()
         }
     }
 
     /**
-     The current default line break mode if none is specified in the text attributes.
+     The line break mode used for the text container's final visible line.
+
+     Ordinary line wrapping comes from `NSParagraphStyle.lineBreakMode`; when no
+     paragraph style is present, UIKit uses the paragraph-style default of word wrapping.
+     This property forwards `NSTextContainer.lineBreakMode`, which controls how a final
+     line is clipped or truncated when the container limits the visible text.
+
+     - SeeAlso:
+       - `placeholderTextLineBreakMode`
      */
     public var defaultLineBreakMode: NSLineBreakMode {
         get {
@@ -952,6 +979,7 @@ public final class TextEditorView: UIView {
             textView.textContainer.lineBreakMode = newValue
 
             updatePlaceholderTextView()
+            setNeedsLayout()
         }
     }
 
@@ -971,6 +999,7 @@ public final class TextEditorView: UIView {
             textView.textContainer.lineFragmentPadding = newValue
 
             updatePlaceholderText()
+            setNeedsLayout()
         }
     }
 
@@ -1046,21 +1075,25 @@ public final class TextEditorView: UIView {
      Ask the text editor view to show menu that is presented usually when user is long-press in text editor view.
      */
     public func showMenu() {
-        let menuController = UIMenuController.shared
-        guard !menuController.isMenuVisible else {
-            return
-        }
-
         guard let menuRect = textView.menuRectAtSelectedRange else {
             return
         }
 
-        if #available(iOS 13.0, *) {
-            menuController.showMenu(from: textView, rect: menuRect)
+        let editMenuInteraction: UIEditMenuInteraction
+        if let existingInteraction = textView.interactions.lazy.compactMap({ interaction in
+            interaction as? UIEditMenuInteraction
+        }).first {
+            editMenuInteraction = existingInteraction
         } else {
-            menuController.setTargetRect(menuRect, in: textView)
-            menuController.setMenuVisible(true, animated: true)
+            let newInteraction = UIEditMenuInteraction(delegate: nil)
+            textView.addInteraction(newInteraction)
+            editMenuInteraction = newInteraction
         }
+        let configuration = UIEditMenuConfiguration(
+            identifier: nil,
+            sourcePoint: CGPoint(x: menuRect.midX, y: menuRect.midY)
+        )
+        editMenuInteraction.presentEditMenu(with: configuration)
     }
 
     /**
@@ -1422,7 +1455,34 @@ public final class TextEditorView: UIView {
 
     /// :nodoc:
     public override func sizeThatFits(_ size: CGSize) -> CGSize {
-        textView.sizeThatFits(size)
+        suffixPresentation.sizeThatFits(size, in: textView)
+    }
+
+    /// :nodoc:
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+
+        // UITextView owns the TextKit 2 viewport and must lay it out before accessory
+        // views can be positioned from caret geometry.
+        suffixPresentation.prepareLayout(in: textView)
+        textView.layoutIfNeeded()
+        layoutSuffixPresentation()
+    }
+
+    /// Positions presentation-only suffixes for the current TextKit 2 viewport.
+    ///
+    /// `layoutViewport()` may synchronously adjust the scroll view and reenter its
+    /// delegate. The guard keeps that UIKit feedback loop finite without suppressing a
+    /// later, genuinely new viewport update.
+    private func layoutSuffixPresentation() {
+        guard !isLayingOutSuffixPresentation else {
+            return
+        }
+        isLayingOutSuffixPresentation = true
+        defer {
+            isLayingOutSuffixPresentation = false
+        }
+        suffixPresentation.layoutSuffixes(in: textView)
     }
 
     /// :nodoc:
@@ -1592,6 +1652,8 @@ extension TextEditorView: NSTextStorageDelegate {
                             range editedRange: NSRange,
                             changeInLength delta: Int)
     {
+        setNeedsLayout()
+
         log(type: .debug,
             "text storage: %@, edited characters: %@, edited attributes: %@, range: %@, change in length: %d",
             textStorage.loggingDescription,
